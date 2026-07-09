@@ -12,62 +12,62 @@ Operation
     Continously reads traces from the oscilloscope
     Includes an arbitrary waveform generator to transmit shaped pulses
 
-coding: utf-8 -*-
-Created on Tue Dec 20 22:20:43 2022
-@author: larsh
+Lars Hoff, USN, Sep 2022
+Modified July 2026
+    - Follow PEP-8 and numpy docstring style guides.
+    - Tested on Ubuntu
+    - GUI updated to QT6
+    - Massive cleanup in code
 
+Remaining
+    - Hardware-control of pulser, pad with zeros for correct rep. rate
 """
 
-# %% Libraries
-
-# General
 import sys
-from PyQt5 import QtWidgets, uic           # For setup with Qt
 import numpy as np
 import matplotlib
-import matplotlib.colors as mcolors
+from PySide6 import QtWidgets
+from PySide6.QtUiTools import loadUiType
 import ultrasound_utilities as us         # USN ultrasound lab specific
-import ps5000a_ultrasound_wrappers as ps  # Interface to Pico c-style library
-
+import ps5000a_ultrasound_wrappers as ps  # Interface to Pico c-library
 
 # Constants
-COLOR_WARNING = ["white", "red"]    # [Text, Background]
-COLOR_OK = ["white", "darkgreen"]
-COLOR_NEUTRAL = ["black", "white"]
-COLOR_CH = [mcolors.TABLEAU_COLORS['tab:blue'],
-            mcolors.TABLEAU_COLORS['tab:red']]
-COLOR_AWG = mcolors.TABLEAU_COLORS['tab:green']
-COLOR_MARKER = mcolors.TABLEAU_COLORS['tab:cyan']
-COLOR_MARKER_PATCH = mcolors.CSS4_COLORS['azure']
-COLOR_AWG_BACKGROUND = mcolors.CSS4_COLORS['mintcream']
+COLOR_WARNING = ['#78281F', '#FADBD8']
+COLOR_OK = ['#145A32', '#D4EFDF']
+COLOR_NEUTRAL = ['#000000', '#FFFFFF']
+COLOR_CH = ['#004B93', '#D32F2F', '#388E3C', '#FBC02D']
+COLOR_OFF = '#708090'
+COLOR_AWG = '#388E3C'
+COLOR_ZOOM = '#C0FFFF'
+COLOR_ZOOM_BACKGROUND = '#F0FFFF'
+COLOR_AWG_BACKGROUND = '#F5FFFA'
 
 TIMESCALE = 1E-6      # Display scales for time and frequency
 FREQUENCYSCALE = 1E6
-
 V_MAX = 20           # Absolute maximum voltage scale
 
-
-# %% Set up GUI from Qt5
+# Set up GUI from Qt5
 matplotlib.use('Qt5Agg')
-oscilloscope_main_window, QtBaseClass = uic.loadUiType(
-    'aquire_ultrasound_gui.ui')
+oscilloscope_main_window, QtBaseClass = loadUiType('aquire_ultrasound_gui.ui')
 
-
-# %% Classes
 
 class Display:
     """Settings for display on screen during runtime.
 
     Attributes
     ----------
-    t_min   Float               Start time of part of trace to be analysed
-    t_max   Float               End time of part of trace to be analysed
-    channel List of Boolean     Channels to display on screen
+    t_min : float
+        Start time of part of trace to be analysed.
+    t_max : float
+        End time of part of trace to be analysed.
+    channel : list of bool
+        Channels to display on screen.
     """
 
-    t_min = 0
-    t_max = 10
-    channel = [True, True]
+    def __init__(self) -> None:
+        self.t_min = 0.0
+        self.t_max = 10.0
+        self.channel = [True, True]
 
 
 class AcquisitionControl:
@@ -75,31 +75,34 @@ class AcquisitionControl:
 
     Attributes
     ----------
-    oscilloscope_ready  Boolean     Osciloscope connected and ready to acquire
-    stop_acquisition    Boolean     Stop data acquisition, do not quit program
-    sampling_changed    Boolean     Sampling updated
+    oscilloscope_ready :  bool
+        Osciloscope connected and ready to acquire.
+    stop_acquisition :  bool
+        Stop data acquisition, do not quit program.
+    sampling_changed :  bool
+        Sampling updated.
     """
 
-    oscilloscope_ready = False
-    stop_acquisition = False
-    sampling_changed = True
+    def __init__(self) -> None:
+        self.oscilloscope_ready = False
+        self.stop_acquisition = False
+        self.sampling_changed = True
 
 
-class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
+class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     """Start GUI and initialise system."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Set up GUI and initialise classes and variables."""
-        QtWidgets.QMainWindow.__init__(self)
-        oscilloscope_main_window.__init__(self)     # Qt GUI window
+
+        super().__init__()
         self.setupUi(self)
 
         # Initialise instrument variables.
         self.runstate = AcquisitionControl()
         self.display = Display()         # Scaling and display options
         self.dso = ps.Communication()    # Instrument connection and status.
-        self.channel = [ps.Channel(0),
-                        ps.Channel(1)]        # Vertical channel configuration
+        self.channel = [ps.Channel(0), ps.Channel(1)]    # Vertical channels
         self.trigger = ps.Trigger()      # Trigger configuration
         self.sampling = ps.Horizontal()  # Horisontal configuration (time)
         self.wfm = us.Waveform()         # Result, storing acquired traces
@@ -114,22 +117,20 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
         self.axis = axis
         self.graph = graph
 
-        self.update_connected_box("Not Connected", COLOR_WARNING)
+        self.update_connected_box(False)
         self.acquireButton.setEnabled(False)
         self.transmitButton.setEnabled(False)
         self.saveButton.setEnabled(False)
 
-# %% Connect and disconnect oscilloscope
-
-    def connect_dso(self):
+    def connect_dso(self) -> int:
         """Connect, configure and start instrument."""
         self.statusBar.showMessage('Connecting instrument')
         errorcode = 0
 
-        # Try to close if an old handle is still resident. May not work
+        # Try to close old handle if resident. May not work
         try:
-            if "openunit" in self.dso.status:
-                if not ("close" in self.dso.status):
+            if 'openunit' in self.dso.status:
+                if not ('close' in self.dso.status):
                     ps.stop_adc(self.dso, self.dso.status)
                     ps.close_adc(self.dso, self.dso.status)
             self.dso.status = {}
@@ -138,7 +139,6 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
 
         # Connect and initialise instrument
         self.dso = ps.open_adc(self.dso)
-
         if self.dso.connected:
             # Check for signal generator
             self.dso = ps.check_awg(self.dso)
@@ -159,14 +159,16 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
             self.connectButton.setEnabled(False)
             self.transmitButton.setEnabled(False)
 
-            self.statusBar.showMessage("Instrument connected")
-            self.update_connected_box("Connected",  COLOR_OK)
+            self.statusBar.showMessage('Instrument connected')
+            self.update_connected_box(True)
+            self.update_status_box(self.acquireButton.isChecked())
             self.runstate.oscilloscope_ready = True
             self.runstate.stop_acquisition = False
+
             errorcode = 0
         else:
-            self.statusBar.showMessage("Instrument not connected")
-            self.update_connected_box("Not Connected", COLOR_WARNING)
+            self.statusBar.showMessage('Instrument not connected')
+            self.update_connected_box(False)
             self.runstate.oscilloscope_ready = False
             self.runstate.stop_acquisition = False
             errorcode = -1
@@ -174,7 +176,7 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
 
     def close_connection(self):
         """Close instrument connection, does not stop program."""
-        self.statusBar.showMessage("Closing")
+        self.statusBar.showMessage('Closing')
         matplotlib.pyplot.close(self.fig)
         try:
             self.dso.status = ps.close_adc(self.dso)
@@ -187,28 +189,29 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
         self.statusBar.showMessage('Closed')
         return self.dso.status, errorcode
 
-# %% Update oscilloscope settings
-
+    # Update oscilloscope settings
     def update_vertical(self):
         """Read vertical settings from GUI and send to instrument."""
         self.channel[0].enabled = True  # Both traces are always aquired
         self.channel[1].enabled = True
 
-        for k in range(len(self.channel)):
-            self.channel[k].v_range = us.read_scaled_value(
-                                      self.rangeComboBox[k].currentText())
-            self.channel[k].v_range = self.channel[k].v_max()
-            self.channel[k].coupling = self.couplingComboBox[k].currentText()
-            self.channel[k].offset = self.offsetSpinBox[k].value()
+        # for k in range(len(self.channel)):
+        for channel_no, channel in enumerate(self.channel):
 
-            bwl = self.bwlComboBox[k].currentText()
-            self.channel[k].bwl = bwl.lower()[0:2] != 'no'
+            channel.v_range = us.read_scaled_value(
+                self.rangeComboBox[channel_no].currentText())
+            channel.v_range = self.channel[channel_no].v_max()
+            channel.coupling = self.couplingComboBox[channel_no].currentText()
+            channel.offset = self.offsetSpinBox[channel_no].value()
+
+            bwl = self.bwlComboBox[channel_no].currentText()
+            channel.bwl = not bwl.casefold().startswith('none')
 
         if self.dso.connected:
-            for k in range(len(self.channel)):
-                self.channel[k].no = k
-                self.dso.status = ps.set_vertical(self.dso, self.channel[k])
-                self.dso.status = ps.set_bwl(self.dso, self.channel[k])
+            for channel in self.channel:
+                # self.channel[k].no = k
+                self.dso.status = ps.set_vertical(self.dso, channel)
+                self.dso.status = ps.set_bwl(self.dso, channel)
 
         return self.dso.status
 
@@ -228,11 +231,7 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
         return self.dso.status
 
     def update_sampling(self):
-        """Read trace length from GUI and set sample rate.
-
-        This function does not communicate with instrument
-        """
-        # Find oscilloscope timebase from sample rate
+        """Read trace length from GUI and set sample rate."""
         fs_requested = int(self.samplerateSpinBox.value()*FREQUENCYSCALE)
         self.sampling.timebase, fs_actual = ps.find_timebase(fs_requested)
         self.sampling.dt = 1/fs_actual
@@ -251,13 +250,16 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
 
         Read settings for arbitrary waveform generator (awg)
         Plot pulse and send to instrument
+        Graph is updated by replacing data
         """
+        print(f'Pulser connected: {self.dso.signal_generator}')
         if not self.dso.signal_generator:
             self.update_transmit_box(available=False)
             return 0    # Does nothing signal genarator not available
 
         else:
-            self.pulse.status = self.transmitButton.isChecked()
+            # Read GUI
+            self.pulse.on = self.transmitButton.isChecked()
             self.pulse.envelope = self.pulseEnvelopeComboBox.currentText()
             self.pulse.shape = self.pulseShapeComboBox.currentText()
             self.pulse.f0 = self.pulseFrequencySpinBox.value()*FREQUENCYSCALE
@@ -265,22 +267,24 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
             self.pulse.phase = self.pulsePhaseSpinBox.value()
             self.pulse.a = self.pulseAmplitudeSpinBox.value()
 
-            t_max = self.pulse.duration() / TIMESCALE
-            vlim = 1.1 * self.pulse.a
-            f, psd = self.pulse.powerspectrum()
+            # Update pulse display
             self.graph['awg'].set_data(self.pulse.t()/TIMESCALE,
                                        self.pulse.y())
-            self.axis['awg'].set_xlim(0, t_max)
-            self.axis['awg'].set_ylim(-vlim, vlim)
+            vlim = 1.1 * self.pulse.a
+            self.axis['awg'].set(xlim=(0, self.pulse.duration() / TIMESCALE),
+                                 ylim=(-vlim, vlim))
+
+            # Calculate and plot pulse spectrum
+            f, psd = self.pulse.powerspectrum()
             self.graph['awgspec'].set_data(f/FREQUENCYSCALE, psd)
 
-            self.dso = ps.set_signal(self.dso, self.sampling, self.pulse)
+            # Select line display depending on pulser status
+            awg_line = 'solid' if self.pulse.on else 'dotted'
             for g in ['awg', 'awgspec']:
-                if self.pulse.on:
-                    self.graph[g].set_linestyle("solid")
-                else:
-                    self.graph[g].set_linestyle("dotted")
+                self.graph[g].set_linestyle(awg_line)
 
+            # Send data to pulser
+            self.dso = ps.set_signal(self.dso, self.sampling, self.pulse)
             self.update_display()
             self.update_transmit_box(available=True, on=self.pulse.on)
 
@@ -294,8 +298,6 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
         self.rf_filter.f_max = self.fmaxSpinBox.value()*FREQUENCYSCALE
         self.rf_filter.order = self.filterOrderSpinBox.value()
         return 0
-
-# %% Acquire, display, and save results
 
     def control_acquisition(self):
         """Control data acquisition from oscilloscope."""
@@ -315,8 +317,8 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
             self.closeButton.setEnabled(False)
             self.transmitButton.setEnabled(self.dso.signal_generator)
 
-            self.update_status_box("Acquiring", COLOR_OK)
-            self.statusBar.showMessage("Acquiring data ...")
+            self.update_status_box(True)
+            self.statusBar.showMessage('Acquiring data ...')
             while not (self.runstate.stop_acquisition):
                 if self.runstate.sampling_changed:
                     self.dso = ps.configure_acquisition(self.dso,
@@ -328,47 +330,67 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
                 self.wfm.dt = self.sampling.dt
                 self.wfm.t0 = self.sampling.t0()
                 self.plot_result()
-        self.update_status_box("Stopped", COLOR_WARNING)
-        self.statusBar.showMessage("Ready")
+        self.update_status_box(False)
+        self.statusBar.showMessage('Ready')
         self.runstate.stop_acquisition = False
         return 0
 
     def stop_acquisition(self):
         """Stop acquisition of traces without closing instrument connection."""
         if not (self.runstate.stop_acquisition):
-            self.statusBar.showMessage("Stopping")
-            self.update_status_box("Stopping", COLOR_WARNING)
+            self.statusBar.showMessage('Stopping')
+            self.update_status_box(False)
         self.runstate.stop_acquisition = True
         self.runstate.oscilloscope_ready = True
         self.closeButton.setEnabled(True)
         self.saveButton.setEnabled(False)
         return 0
 
-    def plot_result(self, time_unit="us"):
+    def plot_result(self, time_unit: str = 'us') -> None:
         """Plot measured trace on screen.
 
-        Arguments
-        ---------
-        time_unit   String  Unit to use for time trace, 's', 'ms', 'us'
+        Results are plotted by changing data in line objects representing
+        the graphs. All other axis elements are kept
+
+        Parameters
+        ----------
+        time_unit : str, optional
+            Unit to use for the time axis. Must be 's', 'ms', or 'us'.
+            The default is 'us'.
+
+        Raises
+        ------
+        ValueError
+            If an unsupported `time_unit` string is provided.
         """
+        valid_units = {'s', 'ms', 'us'}
+        if time_unit not in valid_units:
+            raise ValueError(f"Invalid time_unit '{time_unit}'. "
+                             f"Expected one of {valid_units}.")
+
         wfm_filtered = self.wfm.filtered(self.rf_filter)
         wfm_zoomed = wfm_filtered.zoomed(self.display.t_lim)
-        f, psd = wfm_zoomed.powerspectrum(scale="dB", normalise="True")
-        ch_no = 0
-        for ch_name in ps.CH_NAMES:
+        f, psd = wfm_zoomed.powerspectrum(scale='dB', normalise='True')
+
+        x_data = [wfm_filtered.t() / TIMESCALE,
+                  wfm_zoomed.t() / TIMESCALE,
+                  f / FREQUENCYSCALE]
+
+        for ch_no, ch_name in enumerate(ps.CH_NAMES):
+            lines = [self.graph[key][ch_no]
+                     for key in ['trace', 'zoom', 'spectrum']]
+
             if self.display.channel[ch_no]:
-                self.graph[ch_name][0].set_data(wfm_filtered.t()/TIMESCALE,
-                                                wfm_filtered.y[:, ch_no])
-                self.graph[ch_name][1].set_data(wfm_zoomed.t()/TIMESCALE,
-                                                wfm_zoomed.y[:, ch_no])
-                self.graph[ch_name][2].set_data(f/FREQUENCYSCALE,
-                                                psd[:, ch_no])
+                y_data = [wfm_filtered.y[:, ch_no],
+                          wfm_zoomed.y[:, ch_no], psd[:, ch_no]]
+
+                for line, x, y in zip(lines, x_data, y_data):
+                    line.set_data(x, y)
             else:
-                self.graph[ch_name][0].set_data([], [])  # Full trace
-                self.graph[ch_name][1].set_data([], [])  # Selected interval
-                self.graph[ch_name][2].set_data([], [])  # Power spectrum
-            ch_no += 1
-        # self.fig.canvas.draw()            # --- TRY: Probably necessary
+                for line in lines:
+                    line.set_data([], [])
+
+        # self.fig.canvas.draw()       # --- TRY: Probably necessary
         self.fig.canvas.flush_events()    # --- TRY: Probably unnecessary
         self.update_display()
         return 0
@@ -379,7 +401,7 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
         The filename is generated automatically from a short descriptive
         prefix, the date, and a counter.
         """
-        self.statusBar.showMessage("Saving results ...")
+        self.statusBar.showMessage('Saving results ...')
 
         resultfile = us.find_filename(prefix='us',
                                       ext='trc',
@@ -389,229 +411,179 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
         self.filecounterSpinBox.setValue(resultfile.counter)
         self.resultfileEdit.setText(resultfile.name)
         self.resultpathEdit.setText(resultfile.path)
-        self.statusBar.showMessage(f'Result saved to {resultfile}')
+        self.statusBar.showMessage(f'Result saved to {resultfile.name}')
         return 0
 
-# %% General GUI read and write
+    def _update_ui_element(self, element, message, color) -> str:
+        """Helper to set text and stylesheet colors for a QWidget element."""
+        element.setText(message)
+        element.setStyleSheet(
+            f'color: {color[0]}; background-color: {color[1]}')
+        return message
 
-    def update_status(self, message, append=False):
-        """Update a the short status message field at the bottom of window.
+    def update_status_box(self, acquiring=False) -> str:
+        """Write message to status box, with text and background colors."""
+        if not acquiring:
+            message, color = 'Stopped', COLOR_WARNING
+        else:
+            message, color = 'Acquiring', COLOR_OK
+        return self._update_ui_element(self.statusEdit, message, color)
 
-        Arguments
-        ---------
-        message     String      Text to show in message field
-        append       Boolean     Append new message to exixsting text
+    def update_connected_box(self, connected=False) -> str:
+        """Write status of the instrument connection."""
+        if not connected:
+            message, color = 'Not connected', COLOR_WARNING
+        else:
+            message, color = 'Connected', COLOR_OK
+        return self._update_ui_element(self.connectedEdit, message, color)
 
-        Outputs
-        ---------
-        message     String      New text in message field
-        """
+    def update_transmit_box(self, available=False, on=False) -> str:
+        """Write whether the waveform generator is transmitting pulses."""
+        if not available:
+            message, color = 'Not available', COLOR_NEUTRAL
+        elif on:
+            message, color = 'Transmitting', COLOR_OK
+        else:
+            message, color = 'Off', COLOR_WARNING
+
+        return self._update_ui_element(self.transmitStatusEdit, message, color)
+
+    def update_status(self, message, append=False) -> str:
+        """Update status message field at bottom of window."""
         if append:
-            old_message = self.status_textEdit.toPlainText()
-            message += old_message
+            message = f'{self.status_textEdit.toPlainText()}{message}'
+
         self.status_textEdit.setText(message)
         return message
 
-    def update_status_box(self, message, color=COLOR_NEUTRAL):
-        """Write message to status box, in optional colours.
-
-        Arguments
-        ---------
-        message     String      Text to show in message field
-        color       Int (Hex)   Background color as Matplotlib color code
-
-        Outputs
-        ---------
-        message     String      New text in message field
-        """
-        self.statusEdit.setText(message)
-        self.statusEdit.setStyleSheet(
-            f"color:{color[0]}; background-color:{color[1]}")
-        return message
-
-    def update_connected_box(self, message, color=COLOR_NEUTRAL):
-        """Write status of the instrument connection.
-
-        Arguments
-        ---------
-        message     String      Text to show in message field
-        color       Int (Hex)   Background color as Matplotlib color code
-
-        Outputs
-        ---------
-        message     String      New text in message field
-        """
-        self.connectedEdit.setText(message)
-        self.connectedEdit.setStyleSheet(
-           f"color:{color[0]}; background-color:{color[1]}")
-        return message
-
-    def update_transmit_box(self, available=False, on=False):
-        """Write whether the waveform generator is transmitting pulses.
-
-        Arguments
-        ---------
-        available   Boolean     Pulser available on instrument
-        on          Boolean     Pulser transmitting or not
-
-        Outputs
-        ---------
-        message         String      New text in message field
-        """
-        if not available:
-            message = "Not available"
-            color = COLOR_NEUTRAL
-        else:
-            if on:
-                message = "Transmitting"
-                color = COLOR_OK
-            else:
-                message = "OFF"
-                color = COLOR_WARNING
-
-        self.transmitStatusEdit.setText(message)
-        self.transmitStatusEdit.setStyleSheet(
-            f"color:{color[0]}; background-color:{color[1]}")
-        return message
-
-    def find_voltagescale(self, vmax):
+    def find_voltagescale(self, vmax) -> tuple[float, str]:
         """Find scale for voltage axis based on maximum value.
 
-        Arguments
-        ---------
-        vmax    Float   Scaling for voltage axis, V, mV, uV
+        Parameters
+        ----------
+        vmax : float
+            Maximum voltage value in Volts.
 
-        Outputs
+        Returns
         -------
-        voltage_scale   Float   Voltage scale multiplier
-        unit            String  Voltage scale unit text
+        voltage_scale : float
+            Voltage scale multiplier (e.g., 1e-6, 1e-3, or 1).
+        unit : str
+            Voltage scale unit text (e.g., 'uV', 'mV', or 'V').
         """
         if vmax < 1e-3:
-            voltage_scale = 1e-6
-            unit = "uV"
+            voltage_scale, unit = 1e-6, 'uV'
         elif vmax < 1:
-            voltage_scale = 1e-3
-            unit = "mV"
+            voltage_scale, unit = 1e-3, 'mV'
         else:
-            voltage_scale = 1
-            unit = "V"
+            voltage_scale, unit = 1, 'V'
+
         return voltage_scale, unit
 
-    def update_display(self, time_unit="us"):
+    def update_display(self, time_unit='us') -> int:
         """Update values and markers on screen.
 
-        Arguments
-        ---------
-        time_unit   String  Unit to use on time axis, "s", "ms", "us"
+        Parameters
+        ----------
+        time_unit : str, optional
+            Unit to use on time axis, 's', 'ms', or 'us'. The default is 'us'.
+
+        Returns
+        -------
+        int
+            Returns 0 upon successful completion.
         """
         # Full trace
-        self.axis["trace"][0].set_xlim(self.sampling.t0()/TIMESCALE,
-                                       self.sampling.t_max()/TIMESCALE)
+        t0_scaled = self.sampling.t0() / TIMESCALE
+        tmax_scaled = self.sampling.t_max() / TIMESCALE
+        self.axis['trace'][0].set_xlim(t0_scaled, tmax_scaled)
 
         # Selected interval, 'zoom'
-        t_lim = us.find_limits([self.zoomStartSpinBox.value(),
-                                self.zoomEndSpinBox.value()],
-                               min_diff=0.1)
-        for k in range(len(self.graph['marker'])):
-            self.graph['marker'][k].set_data(np.full((2, 1),
-                                             t_lim[k]),
-                                             np.array([-V_MAX, V_MAX]))
-        self.graph['patch'].set_bounds(t_lim[0],
-                                       -V_MAX,
-                                       t_lim[1]-t_lim[0],
-                                       2*V_MAX)
-        self.axis["zoom"][0].set_xlim(t_lim)
-        self.display.t_lim = t_lim*TIMESCALE
+        zoom_range = [self.zoomStartSpinBox.value(),
+                      self.zoomEndSpinBox.value()]
+        t_lim = us.find_limits(zoom_range, min_diff=0.1)
 
-        # Vertical scale
-        db_lim = us.find_limits([self.dbMinSpinBox.value(),
-                                self.dbMaxSpinBox.value()])
-        for k in range(len(self.display.channel)):
-            self.display.channel[k] = not self.chButton[k].isChecked()
-            vzoom = us.read_scaled_value(
-                                self.displayrangeComboBox[k].currentText())
-            self.axis["zoom"][k].set_ylim(-vzoom, vzoom)
-            self.axis["trace"][k].set_ylim(-self.channel[k].v_max(),
-                                           self.channel[k].v_max())
-            self.axis["spectrum"][k].set_ylim(db_lim)
-        self.axis["awgspec"].set_ylim(db_lim)
+        self.graph['zoom_area'].set_x(t_lim[0])
+        self.graph['zoom_area'].set_width(t_lim[1] - t_lim[0])
+        self.axis['zoom'][0].set_xlim(t_lim)
+        self.display.t_lim = t_lim * TIMESCALE
+
+        # Vertical scale & Channels
+        db_range = [self.dbMinSpinBox.value(), self.dbMaxSpinBox.value()]
+        db_lim = us.find_limits(db_range)
+
+        self.display.channel = [btn.isChecked() for btn in self.chButton]
+        channel_data = zip(self.display.channel,
+                           self.chButton,
+                           self.chLabel,
+                           self.displayrangeComboBox,
+                           self.axis['zoom'],
+                           self.axis['trace'],
+                           self.axis['spectrum'],
+                           self.channel)
+        for k, data in enumerate(channel_data):
+            (is_on, btn, label, vrange,
+             ax_zoom, ax_trace, ax_spectrum, ch) = data
+
+            bg_color = COLOR_CH[k] if is_on else COLOR_OFF
+            btn.setStyleSheet(f"color: white; background-color: {bg_color};")
+            label.setStyleSheet(f"color: white; background-color: {bg_color};")
+
+            vzoom = us.read_scaled_value(vrange.currentText())
+            ax_zoom.set_ylim(-vzoom, vzoom)
+
+            v_max = ch.v_max()
+            ax_trace.set_ylim(-v_max, v_max)
+            ax_spectrum.set_ylim(db_lim)
 
         # Frequency axis
-        f_lim = us.find_limits([self.zoomFminSpinBox.value(),
-                               self.zoomFmaxSpinBox.value()],
-                               min_diff=0.1)
-        self.axis["spectrum"][0].set_xlim(f_lim)
-        self.axis["awgspec"].set_xlim(f_lim)
+        f_range = [self.zoomFminSpinBox.value(), self.zoomFmaxSpinBox.value()]
+        f_lim = us.find_limits(f_range, min_diff=0.1)
+        self.axis['spectrum'][0].set_xlim(f_lim)
+        self.axis['awgspec'].set_ylim(db_lim)
+        self.axis['awgspec'].set_xlim(f_lim)
 
         self.fig.canvas.draw()
         return 0
 
-# %% Conect GUI to functions
+    def connect_gui(self) -> int:
+        """Connect GUI to functions"""
+        # Display scales
+        for spin_box in (self.zoomStartSpinBox, self.zoomEndSpinBox,
+                         self.zoomFminSpinBox, self.zoomFmaxSpinBox,
+                         self.dbMinSpinBox, self.dbMaxSpinBox):
+            spin_box.valueChanged.connect(self.update_display)
 
-    def connect_gui(self):
-        """Connect functions to elements from GUI-file.
-
-        The GUI elements use the QT naming convention (camelCase)
-        """
-        # Display
-        self.zoomStartSpinBox.valueChanged.connect(self.update_display)
-        self.zoomEndSpinBox.valueChanged.connect(self.update_display)
-        self.zoomFminSpinBox.valueChanged.connect(self.update_display)
-        self.zoomFmaxSpinBox.valueChanged.connect(self.update_display)
-        self.dbMinSpinBox.valueChanged.connect(self.update_display)
-        self.dbMaxSpinBox.valueChanged.connect(self.update_display)
-
-        # RF filter
+        # RF-filter
         self.filterComboBox.activated.connect(self.update_rf_filter)
-        self.fminSpinBox.valueChanged.connect(self.update_rf_filter)
-        self.fmaxSpinBox.valueChanged.connect(self.update_rf_filter)
-        self.filterOrderSpinBox.valueChanged.connect(self.update_rf_filter)
+        for spin_box in (self.fminSpinBox, self.fmaxSpinBox,
+                         self.filterOrderSpinBox):
+            spin_box.valueChanged.connect(self.update_rf_filter)
 
-        # Oscilloscope vertical, 2 channels, A and B
-        self.chButton = [self.chAButton, self.chBButton]
-        self.chLabel = [self.chALabel, self.chBLabel]
-        self.displayrangeComboBox = [self.displayrangeAComboBox,
-                                     self.displayrangeBComboBox]
-        self.rangeComboBox = [self.rangeAComboBox,
-                              self.rangeBComboBox]
-        self.couplingComboBox = [self.couplingAComboBox,
-                                 self.couplingBComboBox]
-        self.offsetSpinBox = [self.offsetASpinBox,
-                              self.offsetBSpinBox]
-        self.couplingComboBox = [self.couplingAComboBox,
-                                 self.couplingBComboBox]
-        self.bwlComboBox = [self.bwlAComboBox,
-                            self.bwlBComboBox]
+        # Trigger
+        for combo_box in (self.triggerSourceComboBox,
+                          self.triggerModeComboBox):
+            combo_box.activated.connect(self.update_trigger)
 
-        for k in range(len(self.chButton)):
-            self.rangeComboBox[k].activated.connect(self.update_vertical)
-            self.couplingComboBox[k].activated.connect(self.update_vertical)
-            self.offsetSpinBox[k].valueChanged.connect(self.update_vertical)
-            self.couplingComboBox[k].activated.connect(self.update_vertical)
-            self.bwlComboBox[k].activated.connect(self.update_vertical)
-            self.chButton[k].clicked.connect(self.update_display)
-            self.displayrangeComboBox[k].activated.connect(self.update_display)
+        for spin_box in (
+                self.triggerPositionSpinBox, self.triggerLevelSpinBox,
+                self.triggerDelaySpinBox, self.triggerAutoDelaySpinBox):
+            spin_box.valueChanged.connect(self.update_trigger)
 
-        # Oscilloscope trigger
-        self.triggerSourceComboBox.activated.connect(self.update_trigger)
-        self.triggerPositionSpinBox.valueChanged.connect(self.update_trigger)
-        self.triggerModeComboBox.activated.connect(self.update_trigger)
-        self.triggerLevelSpinBox.valueChanged.connect(self.update_trigger)
-        self.triggerDelaySpinBox.valueChanged.connect(self.update_trigger)
-        self.triggerAutoDelaySpinBox.valueChanged.connect(self.update_trigger)
-
-        # Oscilloscope horizontal (Time)
+        # Horizontal (Time, sampling)
         self.samplerateSpinBox.valueChanged.connect(self.update_sampling)
         self.nSamplesSpinBox.valueChanged.connect(self.update_sampling)
 
-        # Pulse generator (awg)
+        # Pulse generator (AWG)
         self.transmitButton.clicked.connect(self.update_pulser)
-        self.pulseEnvelopeComboBox.activated.connect(self.update_pulser)
-        self.pulseShapeComboBox.activated.connect(self.update_pulser)
-        self.pulseFrequencySpinBox.valueChanged.connect(self.update_pulser)
-        self.pulseDurationSpinBox.valueChanged.connect(self.update_pulser)
-        self.pulsePhaseSpinBox.valueChanged.connect(self.update_pulser)
-        self.pulseAmplitudeSpinBox.valueChanged.connect(self.update_pulser)
+        for combo_box in (self.pulseEnvelopeComboBox,
+                          self.pulseShapeComboBox):
+            combo_box.activated.connect(self.update_pulser)
+
+        for spin_box in (
+                self.pulseFrequencySpinBox, self.pulseDurationSpinBox,
+                self.pulsePhaseSpinBox, self.pulseAmplitudeSpinBox):
+            spin_box.valueChanged.connect(self.update_pulser)
 
         # Program flow
         self.connectButton.clicked.connect(self.connect_dso)
@@ -619,99 +591,131 @@ class ReadUltrasound(QtWidgets.QMainWindow, oscilloscope_main_window):
         self.saveButton.clicked.connect(self.save_result)
         self.closeButton.clicked.connect(self.close_connection)
 
+        # Vertical channels, voltage A and B
         self.chButton = [self.chAButton, self.chBButton]
-        for k in range(len(self.chButton)):
-            self.chButton[k].setStyleSheet(
-                        f"color:white; background-color:{COLOR_CH[k]}")
-            self.chLabel[k].setStyleSheet(
-                        f"color:white; background-color:{COLOR_CH[k]}")
-            # self.displayrangeComboBox[k].setStyleSheet(
-            #             f"color:white; background-color:{COLOR_CH[k]}")
-            self.displayrangeComboBox[k].setStyleSheet(
-                        f"color:{COLOR_CH[k]}")
+        self.chLabel = [self.chALabel, self.chBLabel]
+        self.displayrangeComboBox = [self.displayrangeAComboBox,
+                                     self.displayrangeBComboBox]
+        self.rangeComboBox = [self.rangeAComboBox, self.rangeBComboBox]
+        self.couplingComboBox = [self.couplingAComboBox,
+                                 self.couplingBComboBox]
+        self.offsetSpinBox = [self.offsetASpinBox, self.offsetBSpinBox]
+        self.bwlComboBox = [self.bwlAComboBox, self.bwlBComboBox]
+
+        zipped_channels = zip(self.chButton,
+                              self.chLabel,
+                              self.displayrangeComboBox,
+                              self.rangeComboBox,
+                              self.couplingComboBox,
+                              self.offsetSpinBox,
+                              self.bwlComboBox,
+                              COLOR_CH)
+
+        for (button, label, disp_range, acq_range,
+             coupling, offset, bwl, ch_color) in zipped_channels:
+
+            button.clicked.connect(self.update_display)
+            disp_range.activated.connect(self.update_display)
+            acq_range.activated.connect(self.update_vertical)
+            coupling.activated.connect(self.update_vertical)
+            offset.valueChanged.connect(self.update_vertical)
+            bwl.activated.connect(self.update_vertical)
+
+            button.setStyleSheet(f'color: white; background-color: {ch_color}')
+            label.setStyleSheet(f'color: white; background-color: {ch_color}')
+            disp_range.setStyleSheet(
+                f'color: white; background-color: {ch_color}')
+
         return 0
 
-# %% Define graphs
     def define_graphs(self):
-        """Initialise result graphs, layout, titles, scales, colours etc.
-
-        Outputs
-        -------
-        fig     Handle              Handle to result figure
-        axis    List of handles     Handles to graphs (subplots) in figure
-        graph   List of handles     Handles to plots inside subplots
-
         """
+        Initialise result graphs, layout, titles, scales, colours etc.
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+            Handle to the result figure.
+        axis : list of matplotlib.axes.Axes
+            Handles to graphs (subplots) in the figure.
+        graph : list of matplotlib.lines.Line2D
+            Handles to plots inside the subplots.
+        """
+
         matplotlib.pyplot.ion()   # Does not seem to make any difference?
 
         # Figure layout
-        fig, axis = matplotlib.pyplot.subplot_mosaic(
-                        [['trace', 'trace', 'trace', 'trace'],
-                         ['awg', 'zoom', 'zoom', 'zoom'],
-                         ['awgspec', 'spectrum', 'spectrum', 'spectrum']],
-                        figsize=(16, 12))
+        axgrid = [['trace']*3,
+                  ['awg'] + ['zoom']*2,
+                  ['awgspec'] + ['spectrum']*2]
+        fig, axis = matplotlib.pyplot.subplot_mosaic(axgrid,
+                                                     figsize=(12, 8),
+                                                     layout='constrained')
 
-        # Axes
         axis['trace'].set_title('Acquired traces', loc='left')
         axis['zoom'].set_title('Selected interval', loc='left')
         axis['awg'].set_title('Pulser', loc='left')
-        for g in ['trace', 'zoom', 'awg']:
-            axis[g].set_xlabel('Time [us]')
-            axis[g].set_ylabel('Voltage [V]')
-            axis[g].set_xlim(0, 1)
-            axis[g].grid(True)
-        for g in ['spectrum', 'awgspec']:
-            axis[g].set_xlabel('Frequency [MHz]')
-            # axis[g].set_ylabel('Power [dB re. max]')
-            axis[g].set_xlim(0, 1)
-            axis[g].grid(True)
-        for g in ['zoom', 'spectrum']:
-            axis[g].set_facecolor(COLOR_MARKER_PATCH)
-        for g in ['awg', 'awgspec']:
-            axis[g].set_facecolor(COLOR_AWG_BACKGROUND)
+
+        # Time graphs
+        for key in ['trace', 'zoom', 'awg']:
+            axis[key].set_xlabel('Time [us]')
+            axis[key].set_ylabel('Voltage [V]')
+            axis[key].set_xlim(0, 1)
+            axis[key].grid(True)
+
+        # Frequency graphs
+        for key in ['spectrum', 'awgspec']:
+            axis[key].set_xlabel('Frequency [MHz]')
+            axis[key].set_ylabel('Power [dB re. max]')
+            axis[key].set_xlim(0, 1)
+            axis[key].grid(True)
+
+        # Color backgrounds to identify axes
+        for key in ['zoom', 'spectrum']:
+            axis[key].set_facecolor(COLOR_ZOOM_BACKGROUND)
+        for key in ['awg', 'awgspec']:
+            axis[key].set_facecolor(COLOR_AWG_BACKGROUND)
 
         # Dual y-axis for two channels
-        axis['trace'] = [axis['trace'], axis['trace'].twinx()]
-        axis['zoom'] = [axis['zoom'], axis['zoom'].twinx()]
-        axis['spectrum'] = [axis['spectrum'], axis['spectrum'].twinx()]
+        for key in ['trace', 'zoom', 'spectrum']:
+            axis[key] = [axis[key], axis[key].twinx()]
 
-        ch_no = 0
-        for ch in ps.CH_NAMES:   # Label and color dual axis graphs
+        for ch_idx, ch in enumerate(ps.CH_NAMES):
+            color = COLOR_CH[ch_idx]
+
             for g in ['trace', 'zoom']:
-                axis[g][ch_no].set_ylabel('Voltage [V]')
-            axis['spectrum'][ch_no].set_ylabel('Power [dB re. max]')
-            for g in ['trace', 'zoom', 'spectrum']:
-                axis[g][ch_no].yaxis.label.set_color(COLOR_CH[ch_no])
-                axis[g][ch_no].tick_params(axis='y', colors=COLOR_CH[ch_no])
-            ch_no += 1
+                ax = axis[g][ch_idx]
+                ax.set_ylabel('Voltage [V]', color=color)
+                ax.tick_params(axis='y', colors=color)
 
-        # Graphs, updated with data during measurement
+            ax_spec = axis['spectrum'][ch_idx]
+            ax_spec.set_ylabel('Power [dB re. max]', color=color)
+            ax_spec.tick_params(axis='y', colors=color)
+
+        # Create empty gaphs, updated with data during measurement
         graph = {}
-        zoomed_area = matplotlib.patches.Rectangle(
-                            (0, 0), 0, 0, color=COLOR_MARKER_PATCH, alpha=1)
-        graph['patch'] = axis['trace'][0].add_patch(zoomed_area)
-        graph['marker'] = axis['trace'][0].plot([], [], COLOR_MARKER,
-                                                [], [], COLOR_MARKER)
-        graph['awg'] = axis['awg'].plot([], [], COLOR_AWG)[0]
-        graph['awgspec'] = axis['awgspec'].plot([], [], COLOR_AWG)[0]
 
-        # Two channels plots
-        ch_no = 0
-        for ch_name in ps.CH_NAMES:
-            graph_color = COLOR_CH[ch_no]
-            graph[ch_name] = [
-                axis['trace'][ch_no].plot([], [], color=graph_color)[0],
-                axis['zoom'][ch_no].plot([], [], color=graph_color)[0],
-                axis['spectrum'][ch_no].plot([], [], color=graph_color)[0]]
-            ch_no += 1
+        graph['zoom_area'] = axis['trace'][0].axvspan(0, 0, color=COLOR_ZOOM)
+        graph['awg'], = axis['awg'].plot([], [], color=COLOR_AWG)
+        graph['awgspec'], = axis['awgspec'].plot([], [], color=COLOR_AWG)
+
+        for key in ['trace', 'zoom', 'spectrum']:
+            graph[key] = [ax.plot([], [], color=color)[0]
+                          for ax, color in zip(axis[key], COLOR_CH)]
 
         fig.show()
         return fig, axis, graph
 
 
-# %% Main function
-if __name__ == "__main__":
-    app = QtWidgets.QApplication(sys.argv)
+# Main function
+if __name__ == '__main__':
+    app = QtWidgets.QApplication.instance()
+
+    if app is None:
+        app = QtWidgets.QApplication(sys.argv)
+
+    app.setStyle('Fusion')
     window = ReadUltrasound()
     window.show()
-    sys.exit(app.exec_())
+
+    sys.exit(app.exec())
