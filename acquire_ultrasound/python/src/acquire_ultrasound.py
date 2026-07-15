@@ -24,7 +24,6 @@ Remaining
 """
 
 import sys
-import numpy as np
 import matplotlib
 from PySide6 import QtWidgets
 from PySide6.QtUiTools import loadUiType
@@ -35,12 +34,12 @@ import ps5000a_ultrasound_wrappers as ps  # Interface to Pico c-library
 COLOR_WARNING = ['#78281F', '#FADBD8']
 COLOR_OK = ['#145A32', '#D4EFDF']
 COLOR_NEUTRAL = ['#000000', '#FFFFFF']
-COLOR_CH = ['#004B93', '#D32F2F', '#388E3C', '#FBC02D']
 COLOR_OFF = '#708090'
+COLOR_CH = ['#004B93', '#D32F2F', '#388E3C', '#FBC02D']
 COLOR_AWG = '#388E3C'
 COLOR_ZOOM = '#C0FFFF'
-COLOR_ZOOM_BACKGROUND = '#F0FFFF'
 COLOR_AWG_BACKGROUND = '#F5FFFA'
+COLOR_ZOOM_BACKGROUND = '#F0FFFF'
 
 TIMESCALE = 1E-6      # Display scales for time and frequency
 FREQUENCYSCALE = 1E6
@@ -658,7 +657,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
         # Time graphs
         for key in ['trace', 'zoom', 'awg']:
-            axis[key].set_xlabel('Time [us]')
+            axis[key].set_xlabel('Time [$\mu$s]')
             axis[key].set_ylabel('Voltage [V]')
             axis[key].set_xlim(0, 1)
             axis[key].grid(True)

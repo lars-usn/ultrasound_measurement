@@ -2,31 +2,32 @@
 
 Based on former systems in LabVIEW and Matlab
 
-coding: utf-8 -*-
-@author: larsh
-Created on Tue Sep 13 21:46:41 2022
+Lars Hoff, USN, Sep 2022
+Modified July 2026
+    - Follow PEP-8 and numpy docstring style guides.
+    - Tested on Ubuntu
+    - Genarel code cleanup
 """
 
-import copy
-# from math import pi, radians, cos, log10, floor, frexp
 from math import pi, radians, log10, floor, frexp
 import numpy as np
 from scipy import signal
-from scipy.signal import windows
 import matplotlib.pyplot as plt
-import os
-import datetime
-import pdb
+
+from datetime import date
+from pathlib import Path
 
 
-# %% Classes
-
+# -----------------------------------------------------------------
+# Wavefrom class
+# -----------------------------------------------------------------
 class Waveform:
     """Measurement results as 1D time-traces.
 
-    Used to store traces sampled in time.
-    Compatible with previous versions used in e.g. LabVIEW and Matlab
-    Adapted from LabVIEW's waveform-type, similar to python's mccdaq-library
+    Used to store traces sampled in time. Compatible with previous versions
+    used in LabVIEW and MATLAB. Adapted from LabVIEW's waveform-type,
+    similar to Python's mccdaq-library.
+
 
     Attributes
     ----------
@@ -35,48 +36,67 @@ class Waveform:
     dt : float
         Sample interval
     dtr :float
-        interval between sample blocks. Rarely used
+        Interval between sample blocks. Rarely used
     y : 2D array of float
         Results. Each column is a channel, samples as rows
 
     Methods
     -------
-    n_channels : int
-        Number of data channels
-    n_samples : int
-        Number of samples per channel
-    t : 1D array of float
-        Time vector
-    fs : float
-        Sample rate
-    n_fft : int
-        Number of points used to calculate spectrum
-    f : 1D array of float
-        Frequency vector
-    powerspectrum : 1D array of float
-        Powerspectrum of traces
-    filtered : Waveform class
-        Bandpass filtered traces, all else equal
-    zoomed : Waveform class
-        Zoomed to specified interval, all else identtical
-    plot : function
-        Plots result in figure
-    plot_spectrum : function
-        Plots traces and spectrum
-    save : function
-        Loads Waveform from binary file
-    load : function
-        Saves Waveform to binary file
+    n_channels()
+        Number of data channels.
+    n_samples()
+        Number of samples per channel.
+    t()
+        1D array of float time vector.
+    fs()
+        Sample rate.
+    n_fft()
+        Number of points used to calculate spectrum.
+    f()
+        1D array of float frequency vector.
+    powerspectrum()
+        1D array of float powerspectrum of traces.
+    filtered()
+        Bandpass filtered traces, all else equal.
+    zoomed()
+        Zoomed to specified interval, all else identical.
+    plot()
+        Plots result in figure.
+    plot_spectrum()
+        Plots traces and spectrum.
+    save()
+        Saves waveform to binary file.
+    load()
+        Loads waveform from binary file.
     """
 
-    def __init__(self, y=np.zeros((100, 1)), dt=1, t0=0):
-        """Initialise to ensure correct shapes."""
-        self.y = y              # Voltage traces as 2D numpy array
-        if y.ndim == 1:         # Ensure v is 2D
-            self.y = self.y.reshape((1, len(y)))
-        self.dt = dt             # [s]  Sample interval
-        self.t0 = t0             # [s]  Time of first sample
-        self.dtr = 0             # [s]  interval between blocks. Obsolete
+    def __init__(self, y=None, dt=1.0, t0=0.0):
+        """Initialize the waveform with data and sample parameters.
+
+        Parameters
+        ----------
+        y : ndarray, optional
+            Voltage traces as a numpy array. Rows are samples, columns are
+            channels. If 1D, it will be reshaped to a 2D column vector.
+            Defaults to a zero-filled array of shape (100, 1).
+        dt : float, optional
+            Sample interval in seconds. Defaults to 1.0.
+        t0 : float, optional
+            Time of first sample in seconds. Defaults to 0.0.
+
+        """
+
+        if y is None:
+            self.y = np.zeros((100, 1))
+        else:
+            self.y = np.asarray(y)
+
+        if self.y.ndim == 1:
+            self.y = self.y.reshape((len(self.y), 1))
+
+        self.dt = float(dt)
+        self.t0 = float(t0)
+        self.dtr = 0.0
 
     def n_channels(self):
         """Find number of data channels in trace."""
@@ -87,12 +107,10 @@ class Waveform:
         return self.y.shape[0]
 
     def t(self):
-        """Time vector [s].
+        """Calculate time vector from start time and sample interval [s]."""
 
-        Calculated from start time and sample interval [s]
-        """
         return np.linspace(self.t0,
-                           self.t0+self.dt*self.n_samples(),
+                           self.t0 + self.dt * self.n_samples(),
                            self.n_samples())
 
     def fs(self):
@@ -106,463 +124,609 @@ class Waveform:
 
         Parameters
         ----------
-        upsample : int
-            Number of extra powers of 2 to add
+        upsample : int, optional
+            Number of extra powers of 2 to add. Defaults to 0.
+
+        Returns
+        -------
+        int
+            Number of points for FFT, minimum 2048.
         """
+
         upsample = max(round(upsample), 0)
         m, e = frexp(self.n_samples())
-        n = 2**(e+upsample)
-        # n = 2**(self.n_samples().bit_length() +upsample)  # Next power of 2
+        n = 2 ** (e + upsample)
         return max(n, 2048)
 
     def f(self):
-        """Frequency vector [Hz]."""
-        return np.arange(0, self.n_fft()/2)/self.n_fft() * self.fs()
+        """Calculate frequency vector [Hz]."""
+        return np.arange(0, self.n_fft() / 2) / self.n_fft() * self.fs()
 
     def powerspectrum(self, normalise=False, scale="linear", upsample=2):
         """Calculate power spectrum of time trace.
 
         Parameters
         ----------
-        normalise : bool
-            Normalise to 1 (0 dB) as maximum
-        scale : str
-            Linear (Power)  or dB
-        upsample : int
-            interpolate spectrum by padding to next power of 2
+        normalise : bool, optional
+            Normalise to 1 (0 dB) as maximum. Defaults to False.
+        scale : str, optional
+            Scaling option, either "linear" or "dB". Defaults to "linear".
+        upsample : int, optional
+            Interpolate spectrum by padding to next power of 2. Defaults to 2.
 
         Returns
         -------
-        f : 1D array
-            Frequency vector
-        psd : 2D array
-            Power spectral density
+        f : ndarray
+            1D frequency vector.
+        psd : ndarray
+            2D power spectral density array.
         """
-        f, psd = powerspectrum(self.y,
-                               self.dt,
-                               n_fft=self.n_fft(upsample=2),
+
+        f, psd = powerspectrum(self.y, self.dt,
+                               n_fft=self.n_fft(upsample=upsample),
                                scale=scale,
                                normalise=normalise)
         return f, psd
 
-    def filtered(self, filter):
-        """Bandpass filtered trace.
+    def filtered(self, wave_filter):
+        """Apply bandpass filter to trace.
 
         Parameters
         ----------
-        filter : WaveformFilter
-            Filter specification
+        wave_filter : WaveformFilter
+            Filter specification object.
 
         Returns
         -------
-        wfm : Waveform
-            Copy of original waveform with filtered data
+        Waveform
+            Copy of original waveform with filtered data.
         """
-        wfm = copy.deepcopy(self)
-        match(filter.type[0:2].lower()):
-            case "no":
-                wfm.y = self.y
-            case "ac":
-                dc_level = self.y.mean(axis=0)
-                wfm.y = self.y - dc_level
-            case _:
-                b, a = filter.coefficients()
-                wfm.y = signal.filtfilt(b, a, self.y, axis=0)
+
+        filter_type = str(wave_filter.type).strip().lower()
+
+        if filter_type.startswith("no"):
+            y_filtered = self.y.copy()
+        elif filter_type.startswith("ac"):
+            y_filtered = self.y - self.y.mean(axis=0)
+        else:
+            b, a = wave_filter.coefficients()
+            y_filtered = signal.filtfilt(b, a, self.y, axis=0)
+
+        wfm = Waveform(y=y_filtered, dt=self.dt, t0=self.t0)
         return wfm
 
     def zoomed(self, tlim):
-        """Extract copy of trace from interval in specified by tlim.
+        """Extract copy of trace from interval specified by tlim.
 
         Parameters
         ----------
-        tlim : List of float
-            Start and end of interval to select
+        tlim : array_like
+            List or array containing start and end of interval to select.
 
         Returns
         -------
-        wfm : Waveform class
-            Copy of original waveform zommed to interval
-
+        Waveform
+            Copy of original waveform zoomed to the specified interval.
         """
-        wfm = copy.deepcopy(self)
-        nlim = np.flatnonzero((self.t() >= min(tlim))
-                              & (self.t() <= max(tlim)))
+        time_vector = self.t()
+        t_start, t_end = min(tlim), max(tlim)
 
-        wfm.t0 = self.t()[np.min(nlim)]
-        wfm.y = self.y[nlim]
+        nlim = np.flatnonzero((time_vector >= t_start) &
+                              (time_vector <= t_end))
+
+        if nlim.size == 0:
+            raise ValueError(
+                f"No samples found within the time limits {
+                    t_start} to {t_end}."
+            )
+
+        new_t0 = time_vector[nlim[0]]
+        y_zoomed = self.y[nlim, :]
+
+        wfm = Waveform(y=y_zoomed, dt=self.dt, t0=new_t0)
         return wfm
 
-    def plot(self, time_unit="us", ch=[0, 1], y_max=None):
-        """Plot time traces using unit time_unit.
+    def plot(self, time_unit="us", ch=None, y_max=None):
+        """Plot time traces using specified time unit.
 
         Parameters
         ----------
-        time_unit : str
-            Unit to plot tim in, 's', 'ms', 'us'
-        ch : List of int
-            Channels to plot
-        y_max : float
-            Max. scale on amplitude-axis
-        """
-        plot_pulse(self.t(), self.y[ch], time_unit, y_max)
+        time_unit : str, optional
+            Unit to plot time in ('s', 'ms', 'us'). Defaults to "us".
+        ch : array_like, optional
+            Channels to plot. Defaults to [0, 1] if not specified.
+        y_max : float, optional
+            Maximum scale on the amplitude axis. Defaults to None.
 
+        Returns
+        -------
+        int
+            Returns 0 upon successful execution.
+        """
+
+        if ch is None:
+            ch = [0, 1]
+
+        # CHECK
+        plot_pulse(self.t(), self.y[:, ch], time_unit, y_max)
+        # plot_pulse(self.t(), self.y[ch], time_unit, y_max)
         return 0
 
-    def plot_spectrum(self, time_unit="s", ch=[0, 1], y_max=None, f_max=None,
+    def plot_spectrum(self, time_unit="s", ch=None, y_max=None, f_max=None,
                       normalise=True, scale="dB", db_min=-40, ax=None):
         """Plot trace and power spectrum in one graph.
 
         Parameters
         ----------
-        time_unit : str
-            Unit to plot tim in, 's', 'ms', 'us'
-        ch : List of int
-            Channels to plot
-        y_max : float
-            Max. scale on amplitude-axis
-        f_max : float
-            Max. scale on frequency axis
-        normalise : bool
-            Normalise power spectrum plot  to 1 (0 dB)
-        scale : str
-            Linear (Power) or dB
-        db_min : float
-            Dynamic range on dB-plot
-        ax :List of axis objects
-            Axes to plot time trace and spectrum
+        time_unit : str, optional
+            Unit to plot time in ('s', 'ms', 'us'). Defaults to "s".
+        ch : array_like, optional
+            Channels to plot. Defaults to [0, 1] if not specified.
+        y_max : float, optional
+            Maximum scale on the amplitude axis. Defaults to None.
+        f_max : float, optional
+            Maximum scale on the frequency axis. Defaults to None.
+        normalise : bool, optional
+            Normalise power spectrum plot to 1 (0 dB). Defaults to True.
+        scale : str, optional
+            Scaling option, either "linear" or "dB". Defaults to "dB".
+        db_min : float, optional
+            Dynamic range on dB-plot. Defaults to -40.
+        ax : array_like, optional
+            List of axes objects to plot time trace and spectrum.
+            Defaults to None.
+
+        Returns
+        -------
+        int
+            Returns 0 upon successful execution.
         """
-        plot_spectrum(self.t(), self.y[:, ch], time_unit=time_unit,
+        if ch is None:
+            ch = [0, 1]
+        plot_spectrum(self.t(), self.y[:, ch],
+                      time_unit=time_unit,
                       y_max=y_max, f_max=f_max, n_fft=self.n_fft(),
-                      normalise=normalise, scale=scale, db_min=db_min, ax=ax)
+                      normalise=normalise, scale=scale, db_min=db_min, ax=ax
+                      )
         return 0
 
-    def save(self, filename):
-        """Save 'Waveform' variable to binary file, as 4-byte (sgl) floats.
+    def save(self, filename, overwrite=True):
+        """Save 'Waveform' variable to binary file as 4-byte (sgl) floats.
 
-        Compatible with internal format used since 1990s on a variety of
-        platforms (LabWindows, C, LabVIEW, Matlab)
-        Uses 'c-order' of arrays and IEEE big-endian byte order
-        Complements load()
-
-        Parameters
-        ----------
-        filename    str  Full path of file to save data in
-
-        Contents of file
-        ----------------
-        hd : str
-            Header, informative text
-        nc : int
-            Number of channels
-        t0 : float
-            Start time
-        dt : float
-            Sample interval
-        dtr : float
-            interval between blocks. Used only in special cases
-        v : 2D array of float
-            Data points (often voltages)
-        """
-        header = "<WFM_Python_>f4>"    # Header gives source and data format
-        n_header = len(header)
-        # y = np.require( self.v, requirements='C' )
-        with open(filename, 'xb') as fid:
-            fid.write(np.array(n_header).astype('>i4'))
-            fid.write(bytes(header, 'utf-8'))
-            fid.write(np.array(self.n_channels()).astype('>u4'))
-            fid.write(np.array(self.t0).astype('>f8'))
-            fid.write(np.array(self.dt).astype('>f8'))
-            fid.write(np.array(self.dtr).astype('>f8'))
-            fid.write(self.y.astype('>f4'))
-        return 0
-
-    def load(self, filename):
-        """Load 'Waveform' files from binary file, as 4-byte (sgl) floats.
-
-        Loads contents of file into the variable.
-        Compatible with internal format used since 1990s on a variety of
-        platforms (LabWindows, C, LabVIEW, Matlab)
-        Uses 'c-order' of arrays and IEEE big-endian byte order.
-        Complements save()
+        Compatible with the internal format used since the 1990s on a variety
+        of platforms (LabWindows, C, LabVIEW, MATLAB). Uses 'C-order' of arrays
+        and IEEE big-endian byte order. Complements load().
 
         Parameters
         ----------
         filename : str
-            Full path of file to load
+            Full path of the file to save data in.
+        overwrite : bool, optional
+            If True, overwrites the file if it exists. If False, raises a
+            FileExistsError. Defaults to True.
+
+        Returns
+        -------
+        int
+            Returns 0 upon successful execution.
+
+        Raises
+        ------
+        FileExistsError
+            If `overwrite` is False and the file already exists.
         """
-        with open(filename, 'rb') as fid:
-            n_header = int(np.fromfile(fid, dtype='>i4', count=1))
+        header = "<WFM_Python_>f4>"  # Header gives source and data format
+        n_header = len(header)
+        mode = 'wb' if overwrite else 'xb'
+
+        y_contiguous = np.ascontiguousarray(self.y, dtype='>f4')
+        with open(filename, mode) as fid:
+            fid.write(np.array(n_header, dtype='>i4').tobytes())
+            fid.write(bytes(header, 'utf-8'))
+            fid.write(np.array(self.n_channels(), dtype='>u4').tobytes())
+            fid.write(np.array(self.t0, dtype='>f8').tobytes())
+            fid.write(np.array(self.dt, dtype='>f8').tobytes())
+            fid.write(np.array(self.dtr, dtype='>f8').tobytes())
+            fid.write(y_contiguous.tobytes())
+
+        return 0
+
+    def load(self, filename):
+        """Load 'waveform' files from a binary file as 4-byte (sgl) floats.
+
+        Loads the contents of the binary file into the instance variables.
+        This format is compatible with the internal format used since the
+        1990s across various platforms (LabWindows, C, LabVIEW, MATLAB).
+        It uses C-order arrays and IEEE big-endian byte order.
+
+        Parameters
+        ----------
+        filename : str
+            The full path of the file to load.
+
+        Returns
+        -------
+        int
+            Returns 0 upon successful completion.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the specified file does not exist.
+        IOError
+            If the file cannot be read.
+        """
+        with open(filename, "rb") as fid:
+            # Read header length and the header string
+            n_header = int(np.fromfile(fid, dtype=">i4", count=1)[0])
             header_bytes = fid.read(n_header)
             self.header = header_bytes.decode("utf-8")
 
-            n_ch = int(np.fromfile(fid, dtype='>u4', count=1))
-            self.t0 = float(np.fromfile(fid, dtype='>f8', count=1))
-            self.dt = float(np.fromfile(fid, dtype='>f8', count=1))
-            self.dtr = float(np.fromfile(fid, dtype='>f8', count=1))
-            y = np.fromfile(fid, dtype='>f4', count=-1)   # Traces, 2D array
+            # Read channel configuration and time parameters
+            n_ch = int(np.fromfile(fid, dtype=">u4", count=1)[0])
+            self.t0 = float(np.fromfile(fid, dtype=">f8", count=1)[0])
+            self.dt = float(np.fromfile(fid, dtype=">f8", count=1)[0])
+            self.dtr = float(np.fromfile(fid, dtype=">f8", count=1)[0])
+
+            # Read signal traces (2D array)
+            y = np.fromfile(fid, dtype=">f4", count=-1)
             self.y = np.reshape(y, (-1, n_ch))
 
-            self.sourcefile = filename
+        self.sourcefile = filename
         return 0
 
 
-# %% Generated signals
-
+# -----------------------------------------------------------------
+# Generated signals: Pulse class
+# -----------------------------------------------------------------
 class Pulse:
     """Create standardised theoretical ultrasound pulses.
 
-    For simulations or transfer to a signal generator.
-    Defines a standard pulse from given attributes
+    For simulations or transfer to a signal generator. Defines a standard
+    pulse from given attributes.
 
     Attributes
     ----------
+    shape : str
+        Carrier wave shape: "sine", "square", "triangle", "sawtooth".
     envelope : str
-        Pulse envelope: rect, hann, tukey, ...
-    shape :  str
-        Carrier wave: sine, square, triangle, ...
-    f0 : float
-        Carrier wave frequency
+        Pulse envelope: "rectangular", "hann", "hamming", "triangle", "tukey".
     n_cycles : float
-        Pulse length as number of cycles
-    phase : float
-        Phase of carrier wave in degrees, ref. cosine
+        Pulse length as number of cycles.
+    f0 : float
+        Carrier wave frequency in Hz.
     a : float
-        Amplitude
+        Amplitude.
+    phase : float
+        Phase of carrier wave in degrees, referenced to a cosine.
     dt : float
-        Sample interval
+        Sample interval in seconds.
     alpha : float
-        Tukey window cosine-fraction, alpha = 0 ... 1
-    trigger_source
-        Not implemented yet
-    status: str
-        Pulser status, "ON", "OFF", "UNAVAILABLE"
-
-    Methods
-    -------
-    t  : 1D array of float
-        Time vector
-    y : 1D array of float
-        Pulse time trace
-    period : float
-        Carrier wave period
-    duration : float
-        Pulse duration, seconds
-    n_samples : int
-        Number of samples in pulse
-    n_fft : int         ,
-        Number of points used to calculate spectrum
-    powerspectrum : 1D array of float
-        Powerspectrum of pulse
-    time_unit : str
-        Appropriate unit for time-trace plot, from f0
-    plot : Function
-        Plots result in figure
-    plot_spectrum : Function
-        Plots traces and spectrum
+        Tukey window cosine-fraction, alpha = 0.0 to 1.0.
+    trigger_source : int
+        Trigger source identifier (not fully implemented yet).
+    available : bool
+        Availability status of the pulser.
+    on : bool
+        Power/activation status ("ON"/"OFF").
     """
 
-    shape = "sine"
-    envelope = "rectangular"
-    n_cycles = 2.0
-    f0 = 2.0e6
-    a = 1.0
-    phase = 0.0
-    dt = 8e-9
-    alpha = 0.5
-    trigger_source = 1
-    available = False
-    on = False
+    shape: str = "sine"
+    envelope: str = "rectangular"
+    n_cycles: float = 2.0
+    f0: float = 2.0e6
+    a: float = 1.0
+    phase: float = 0.0
+    dt: float = 8e-9
+    alpha: float = 0.5
+    trigger_source: int = 1
+    available: bool = False
+    on: bool = False
 
-    def t(self):
-        """Time vector [s]."""
+    def t(self) -> np.ndarray:
+        """Create the time vector for the pulse.
+
+        Returns
+        -------
+        np.ndarray
+            1D array of float representing the time vector in seconds.
+        """
         return np.arange(0, self.duration(), self.dt)
 
-    def y(self):
-        """Create pulse from input specification."""
-        match(self.envelope[0:3].lower()):
+    def y(self) -> np.ndarray:
+        """Create the pulse time trace from the input specification.
+
+        Returns
+        -------
+        np.ndarray
+            1D array of float representing the generated pulse waveform.
+        """
+        # Select the appropriate window/envelope
+        envelope_type = self.envelope[0:3].lower()
+        n_pts = self.n_samples()
+
+        match envelope_type:
             case "rec":
-                win = windows.boxcar(self.n_samples())
+                win = signal.windows.boxcar(n_pts)
             case "han":
-                win = windows.hann(self.n_samples())
+                win = signal.windows.hann(n_pts)
             case "ham":
-                win = windows.hamming(self.n_samples())
+                win = signal.windows.hamming(n_pts)
             case "tri":
-                win = windows.triang(self.n_samples())
+                win = signal.windows.triang(n_pts)
             case "tuk":
-                win = windows.tukey(self.n_samples(), self.alpha)
+                win = signal.windows.tukey(n_pts, self.alpha)
             case _:
-                win = windows.boxcar(self.n_samples())
-        arg = 2*pi*self.f0 * self.t() + radians(self.phase)
-        match(self.shape.lower()[0:3]):
+                win = signal.windows.boxcar(n_pts)
+
+        phase_arg = 2 * pi * self.f0 * self.t() + radians(self.phase)
+
+        # Select the carrier wave shape
+        match self.shape.lower()[0:3]:
             case "squ":
-                s = 1/2*signal.square(arg, duty=0.5)
+                s = 0.5 * signal.square(phase_arg, duty=0.5)
             case "tri":
-                s = 1/2*signal.sawtooth(arg, width=0.5)
+                s = 0.5 * signal.sawtooth(phase_arg, width=0.5)
             case "saw":
-                s = 1/2*signal.sawtooth(arg, width=1)
+                s = 0.5 * signal.sawtooth(phase_arg, width=1.0)
             case _:
-                s = np.cos(arg)
-        y = self.a*win*s
-        y[-1] = 0    # Remove residue DC-level after pulse is over
-        return y
+                s = np.cos(phase_arg)
 
-    def period(self):
-        """Period of carrier wave [s]."""
-        return 1/self.f0
+        y_signal = self.a * win * s
+        if len(y_signal) > 0:
+            y_signal[-1] = 0.0
 
-    def duration(self):
-        """Duration of pulse [s]."""
-        return self.period()*self.n_cycles
+        return y_signal
 
-    def n_samples(self):
-        """Find number of samples in pulse."""
+    def period(self) -> float:
+        """Calculate the period of the carrier wave.
+
+        Returns
+        -------
+        float
+            Carrier wave period in seconds.
+        """
+        return 1.0 / self.f0
+
+    def duration(self) -> float:
+        """Calculate the total duration of the pulse.
+
+        Returns
+        -------
+        float
+            Pulse duration in seconds.
+        """
+        return self.period() * self.n_cycles
+
+    def n_samples(self) -> int:
+        """Find the number of samples in the pulse.
+
+        Returns
+        -------
+        int
+            Number of samples.
+        """
         return len(self.t())
 
-    def time_unit(self):
-        """Set unit for time trace plot, based on cantre frequency."""
+    def time_unit(self) -> str:
+        """Set time unit for plotting based on centre frequency.
+
+        Returns
+        -------
+        str
+            Time unit string ("ns", "us", "ms", or "s").
+        """
         if self.f0 > 1e9:
             return "ns"
         if self.f0 > 1e6:
             return "us"
-        elif self.f0 > 1e3:
+        if self.f0 > 1e3:
             return "ms"
-        else:
-            return "s"
+        return "s"
 
-    def n_fft(self):
-        """Set number of points to calculate spectrum.
+    def n_fft(self) -> int:
+        """Set the number of points used to calculate the spectrum.
 
-        Always as power of 2, zeros padded at end
-        """
-        m, e = frexp(self.n_samples())
-        n = 2**(e+3)
-        # n = 2**(3+(self.n_samples()-1).bit_length())
-        return max(n, 2048)
-
-    def powerspectrum(self):
-        """Calculate power spectrum of trace.
+        The number is always a power of 2, using for zero-padding.
 
         Returns
         -------
-        f : 1D array of float
-            Frequency vector
-        psd : 1D array of float
-            Power spectral density
+        int
+            Number of FFT points (minimum 2048).
         """
-        f, psd = powerspectrum(self.y(), self.dt, n_fft=self.n_fft(),
-                               scale="dB", normalise=True)
+        # math.frexp splits a float into mantissa and exponent
+        m, e = frexp(self.n_samples())
+        n = 2 ** (e + 3)
+        return max(n, 2048)
+
+    def powerspectrum(self) -> tuple[np.ndarray, np.ndarray]:
+        """Calculate the power spectrum of the pulse trace.
+
+        Returns
+        -------
+        f : np.ndarray
+            1D array of float representing the frequency vector.
+        psd : np.ndarray
+            1D array of float representing the power spectral density.
+        """
+        f, psd = powerspectrum(y=self.y(),
+                               dt=self.dt,
+                               n_fft=self.n_fft(),
+                               scale="dB",
+                               normalise=True)
         return f, psd
 
-    def plot(self):
-        """Plot pulse in time domain."""
-        plot_pulse(self.t(), self.y(), self.time_unit())
+    def plot(self) -> int:
+        """Plot the pulse in the time domain.
+
+        Returns
+        -------
+        int
+            Returns 0 upon successful execution.
+        """
+        plot_pulse(t=self.t(), y=self.y(), time_unit=self.time_unit())
         return 0
 
-    def plot_spectrum(self):
-        """Plot trace and power spectrum."""
-        f_max = scale_125(3*self.f0)
-        plot_spectrum(self.t(), self.y(), time_unit=self.time_unit(),
-                      f_max=f_max, n_fft=self.n_fft(),
-                      normalise=True, scale="db")
+    def plot_spectrum(self) -> int:
+        """Plot both the time trace and the power spectrum.
+
+        Returns
+        -------
+        int
+            Returns 0 upon successful execution.
+        """
+        plot_spectrum(t=self.t(),
+                      y=self.y(),
+                      time_unit=self.time_unit(),
+                      f_max=scale_125(3*self.f0),
+                      n_fft=self.n_fft(),
+                      scale="db",
+                      normalise=True)
         return 0
 
 
-# %% Utility classes
-
+# -----------------------------------------------------------------
+# Utility classes
+# -----------------------------------------------------------------
 class WaveformFilter:
-    """Definition of digital filter for "Waveform" class.
+    """Definition of a digital filter for the "Waveform" class.
 
     Attributes
     ----------
     type : str
-        Type filter: "None", "AC", "BPF" (Bandpass)
+        Type of filter: "No" (None), "AC", "BPF" (Bandpass).
     f_min : float
-        Lower cutoff frequency
+        Lower cutoff frequency in Hz.
     f_max : float
-        Upper cutoff frequency
-    order :  int
-        Filter order
+        Upper cutoff frequency in Hz.
+    order : int
+        Filter order.
     fs : float
-        Sample rate
-
-    Methods
-    -------
-    wc : 1D array of float
-        Cutoff-frequencies normalised to sample rate
-    coefficients : 1D array of float
-        Filter coefficients, b and a
+        Sample rate in Hz.
     """
 
-    type = "No"          # Filter type: 'NO, 'AC', 'BPF'
-    f_min = 100e3        # [Hz] Lower cutoff frequency
-    f_max = 10e6         # [Hz] Upper cutoff frequency
-    order = 2            # Filter order
-    fs = 100e6  # Sample rate
+    # Class attributes with default values and type hints
+    type: str = "No"
+    f_min: float = 100e3
+    f_max: float = 10e6
+    order: int = 2
+    fs: float = 100e6
 
-    def wc(self):      # Cutoff normalised to Nyquist-frequency
-        """Return normalised cutoff-frequencies."""
-        return np.array([self.f_min, self.f_max])/(self.fs/2)
+    def fn(self) -> np.ndarray:
+        """Return the cutoff frequencies normalised to the Nyquist frequency.
 
-    def coefficients(self):
-        """Return filter coefficients from filter description, (b,a)-form."""
-        b, a = signal.butter(self.order,
-                             self.wc(),
-                             btype='bandpass',
-                             output='ba')
+        Returns
+        -------
+        np.ndarray
+            1D array of float containing the normalised lower and upper
+            cutoff frequencies.
+        """
+        f_nyquist = self.fs / 2
+        return np.array([self.f_min, self.f_max]) / f_nyquist
+
+    def coefficients(self) -> tuple[np.ndarray, np.ndarray]:
+        """Calculate filter coefficients (b, a) from the filter description.
+
+        Determines the filter type (lowpass, highpass, or bandpass) from
+        the cutoff frequencies and calculates the coefficients.
+
+        Returns
+        -------
+        b : np.ndarray
+            The numerator coefficient array of the filter.
+        a : np.ndarray
+            The denominator coefficient array of the filter.
+        """
+        fn_vals = self.fn()
+        if fn_vals[0] <= 0:
+            b, a = signal.butter(self.order, fn_vals[1],
+                                 btype="lowpass", output="ba")
+        elif fn_vals[1] > 0.5:
+            b, a = signal.butter(self.order, fn_vals[0],
+                                 btype="highpass", output="ba")
+        else:
+            b, a = signal.butter(self.order, fn_vals,
+                                 btype="bandpass", output="ba")
+
         return b, a
 
 
 class ResultFile:
-    """Path, name and counter for resultfile."""
+    """Path, name, and counter configuration for a result file.
 
-    prefix = 'test'
-    ext = 'trc'
-    path = ''
-    directory = ''
-    name = ''
-    counter = 0
-
-
-# %% Utility functions
-
-def scale_125(x):
-    """Find next number in an 1-2-5-10-20 ... sequence.
-
-    Argumments
+    Attributes
     ----------
-    x : float
-        Reference value, positive or negative
-
-    Returns
-    -------
-    xn : float
-        Next number in 1-2-5-10 sequence greater than magnitude of x
+    prefix : str
+        Prefix for the file name.
+    ext : str
+        File extension (e.g., "trc").
+    path : str
+        Full path to the file.
+    directory : str
+        Directory where the file is stored.
+    name : str
+        Base name of the file.
+    counter : int
+        File counter or index.
     """
-    prefixes = np.array([1, 2, 5, 10])
-    exponent = int(floor(log10(abs(x))))
-    mant = abs(x) / (10**exponent)
-    valid = np.where(prefixes >= mant-0.001)
-    mn = np.min(prefixes[valid])
-    xn = mn*10**exponent
-    return xn
+
+    # Class attributes with default values and type hints
+    prefix: str = "test"
+    ext: str = "trc"
+    path: str = ""
+    directory: str = ""
+    name: str = ""
+    counter: int = 0
 
 
-def find_timescale(time_unit="s"):
-    """Return time and frequency axis scaling based on time unit.
+# -----------------------------------------------------------------
+# Utility classes
+# -----------------------------------------------------------------
+def scale_125(x: float) -> float:
+    """Find the next number in a 1-2-5-10-20... sequence.
 
     Parameters
     ----------
-    time_unit : str
-        Time unit used in plots: "s", "ms", "us", "ns"
+    x : float
+        Reference value, positive or negative.
+
+    Returns
+    -------
+    float
+        Next number in the 1-2-5 sequence greater than or equal to the
+        magnitude of x.
+    """
+    if x == 0:
+        return 1.0
+
+    prefixes = np.array([1, 2, 5, 10])
+    magnitude = abs(x)
+
+    exponent = int(floor(log10(magnitude)))
+    mantissa = magnitude / (10**exponent)
+
+    valid_indices = np.where(prefixes >= mantissa - 0.001)
+    min_prefix = np.min(prefixes[valid_indices])
+
+    return float(min_prefix * (10**exponent))
+
+
+def find_timescale(time_unit: str = "s") -> tuple[float, str]:
+    """Return time multiplier and frequency axis scaling based on a time unit.
+
+    Parameters
+    ----------
+    time_unit : str, default "s"
+        Time unit used in plots: "s", "ms", "us", "ns".
 
     Returns
     -------
     multiplier : float
-        Multiplier for time to get requested unit
+        Multiplier for time to get the requested unit.
     freq_unit : str
-        Corresponting Frequency unit
+        Corresponding frequency unit.
     """
-    match(time_unit):
+    match time_unit:
         case "ns":
             multiplier = 1e9
             freq_unit = "GHz"
@@ -573,259 +737,308 @@ def find_timescale(time_unit="s"):
             multiplier = 1e3
             freq_unit = "kHz"
         case _:
-            multiplier = 1
+            multiplier = 1.0
             freq_unit = "Hz"
+
     return multiplier, freq_unit
 
 
-def find_limits(limits, min_diff=1):
-    """Minimum and maximum values as numpy array.
+def find_limits(limits: np.ndarray, min_diff: float = 1.0) -> np.ndarray:
+    """Find the minimum and maximum values as a NumPy array.
+
+    Ensures that the difference between the maximum and minimum values
+    is at least the specified minimum difference.
 
     Parameters
     ----------
-    limits : 1Darray of floats
-        Requested limits
-    min_diff : float
-        Minimum difference between min and max
+    limits : np.ndarray
+        1D array or array-like of floats representing the requested limits.
+    min_diff : float, default 1.0
+        The minimum required difference between the min and max values.
 
     Returns
     -------
-    [min, max] : 1D array of float
-        Actual limits
+    np.ndarray
+        1D array containing [min_value, max_value].
     """
-    min_value = min(limits)
-    max_value = max(max(limits), min_value+min_diff)
+    min_value = float(np.min(limits))
+    max_value = float(np.max(limits))
+
+    # Ensure minimum difference
+    max_value = max(max_value, min_value + min_diff)
+
     return np.array([min_value, max_value])
 
 
-def read_scaled_value(quantity):
-    """Interpret a text as a scaled value (milli, kilo, Mega etc.).
+def read_scaled_value(quantity: str) -> float:
+    """Interpret a text string as a scaled floating-point value.
+
+    Parses strings containing metric prefixes (e.g., micro, milli, kilo, Mega,
+    Giga) followed by their unit, separating the number and the unit.
 
     Parameters
     ----------
     quantity : str
-        Value as "number unit", e.g. "3.4 MHz"
+        The value as a string (e.g., "3.4 MHz", "100 us", "50").
 
     Returns
     -------
-    value : float
-        Value scaled with unit, e.g. 3 400 000 or 3.4e6
+    float
+        The value scaled according to its metric prefix.
+
+    Examples
+    --------
+    >>> read_scaled_value("3.4 MHz")
+    3400000.0
+    >>> read_scaled_value("100")
+    100.0
     """
-    quantity = quantity.split(' ')   # Split in number and unit at space
-    number = float(quantity[0])
-    if len(quantity) == 1:
-        multiplier = 1
-    else:
-        prefix = quantity[1][0]    # First letter of unit gives scale
-        if prefix == 'u':
+    # Split by any whitespace and remove extra padding
+    parts = quantity.strip().split()
+
+    if not parts:
+        return 0.0
+
+    number = float(parts[0])
+
+    if len(parts) == 1:
+        return number
+
+    prefix = parts[1][0]
+    match prefix:
+        case "u":
             multiplier = 1e-6
-        elif prefix == 'm':
+        case "m":
             multiplier = 1e-3
-        elif prefix == 'k':
+        case "k":
             multiplier = 1e3
-        elif prefix == 'M':
+        case "M":
             multiplier = 1e6
-        elif prefix == 'G':
+        case "G":
             multiplier = 1e9
-        else:
-            multiplier = 1
-    value = number * multiplier
-    return value
+        case _:
+            multiplier = 1.0
+
+    return number * multiplier
 
 
-def find_filename(prefix='test', ext='trc', resultdir="..\\results"):
-    """Find new file name from date and counter.
+def find_filename(prefix: str = "test",
+                  ext: str = "trc",
+                  resultdir: str = "../results") -> ResultFile:
+    """Find a new unique file name based on the current date and a counter.
 
-    Finds next free file name on format prefix_yyyy_mm_dd_nnnn.ext where
-    yyyy_mm_dd is the date and nnnn is a counter.
-    Saves to directory resultdir.
-    Last counter value is saved in the counter file prefix.cnt.
-    Starts looking for next free finelame after value in counter file
-    Defining this methods in the RsultFile-class was too complicated due to
-    the cross-checking and creation of new directory
+    Finds the next free file name in the format `prefix_yyyy_mm_dd_nnnn.ext`
+    where `yyyy_mm_dd` is the date and `nnnn` is a counter. The file is mapped
+    to the directory `resultdir`. The last counter value is tracked and saved
+    in a local counter file named `prefix.cnt`.
 
     Parameters
     ----------
-    prefix :str
-        Code that characterises measurement type
-    ext : str
-        File Extension
-    resultdir : str
-        Directory for results
+    prefix : str, default "test"
+        Code that characterises the measurement type.
+    ext : str, default "trc"
+        File extension.
+    resultdir : str, default "../results"
+        Directory where results should be stored.
 
     Returns
     -------
-    resultfile : ResultFile class
-        Result-file parameteres: name, path, counter, etc.
+    ResultFile
+        Instance of the ResultFile class populated with the new file details.
     """
     resultfile = ResultFile()
-
     prefix = prefix.lower()
-    ext = ext.lower()
+    ext = ext.lower().split(".")[-1]
 
-    if not (os.path.isdir(resultdir)):     # Create result directory if needed
-        os.mkdir(resultdir)
+    base_dir = Path(resultdir).resolve()
+    base_dir.mkdir(parents=True, exist_ok=True)
 
-    counterfile = os.path.join(os.getcwd(), resultdir, f'{prefix}.cnt')
-    if os.path.isfile(counterfile):    # Read existing counter file
-        with open(counterfile, 'r') as fid:
-            counter = int(fid.read())
+    counter_file = base_dir / f"{prefix}.cnt"
+
+    # Read existing counter or start at 0
+    if counter_file.is_file():
+        try:
+            counter = int(counter_file.read_text().strip())
+        except ValueError:
+            counter = 0
     else:
-        counter = 0   # Set counter to 0 if no counter file exists
+        counter = 0
 
-    datecode = datetime.date.today().strftime('%Y_%m_%d')
-    ext = ext.split('.')[-1]
-    resultdir = os.path.abspath(os.path.join(os.getcwd(), resultdir))
-    file_exists = True
-    while file_exists:   # Find lowest free file number
+    date_code = date.today().strftime("%Y_%m_%d")
+
+    # Find the lowest free file number
+    while True:
         counter += 1
-        filename = (prefix + '_' + datecode + '_'
-                    + f'{counter:04d}' + '.' + ext)
-        resultpath = os.path.join(resultdir, filename)
-        file_exists = os.path.isfile(resultpath)
-    with open(counterfile, 'wt') as fid:    # Write counter to counter file
-        fid.write(f'{counter:d}')
+        filename = f"{prefix}_{date_code}_{counter:04d}.{ext}"
+        result_path = base_dir / filename
 
+        if not result_path.is_file():
+            break
+
+    # Save the updated counter back to the file
+    counter_file.write_text(str(counter))
+
+    # Populate resultFile
     resultfile.prefix = prefix
     resultfile.counter = counter
     resultfile.ext = ext
-    resultfile.directory = resultdir
+    resultfile.directory = str(base_dir)
     resultfile.name = filename
-    resultfile.path = resultpath
+    resultfile.path = str(result_path)
 
     return resultfile
 
 
-def plot_pulse(ax, t, x, time_unit="s", y_max=None):
-    """Plot pulse as time-trace in standardised graph.
+def plot_pulse(ax: plt.Axes | None = None,
+               t: np.ndarray = None,
+               y: np.ndarray = None,
+               time_unit: str = "s",
+               y_max: float | None = None) -> int:
+    """Plot a pulse as a time-trace in a standardised graph."""
+    if ax is None:
+        ax = plt.gca()
 
-    Parameters
-    ----------
-    t : 1D array of float
-        Time vector
-    x : 1D or 2D array of float
-        Vector of values to plot
-    time_unit : str
-        Unit for scaling time axis
-    """
     multiplier, freq_unit = find_timescale(time_unit)
-    ax.plot(t*multiplier, x)
-
-    ax.set(xlabel=f"Time [{time_unit}]",
-           ylabel="Ampltude")
+    ax.plot(t * multiplier, y)
+    ax.set(xlabel=f"Time [{time_unit}]", ylabel="Amplitude")
     ax.grid(True)
 
     if y_max is not None:
-        ax.set_ylim(y_max*np.array([-1, 1]))
+        ax.set_ylim(y_max * np.array([-1.0, 1.0]))
 
     return 0
 
 
-def powerspectrum(y, dt, n_fft=None,
-                  scale="linear", normalise=False, transpose=True):
-    """Calculate power spectrum of pulse. Finite length signal, no window.
+def powerspectrum(y: np.ndarray, dt: float,
+                  n_fft: int | None = None,
+                  scale: str = "linear",
+                  normalise: bool = False) -> tuple[np.ndarray, np.ndarray]:
+    """Calculate the power spectrum of a pulse waveform.
 
-    Datapoints in rows (dimension 0)
-    Channels in (dimension 1)
-    Transposed to fit definition of periodogram function in SciPy
+    Computes the periodogram for a finite-length signal without applying
+    additional windowing. Supports both 1D (single channel) and 2D
+    (multi-channel) arrays where data points are in rows (dimension 0) and
+    channels are in columns (dimension 1).
 
     Parameters
     ----------
-    x : 1D array of float
-        Time trace
+    y : np.ndarray
+        Time trace data. Can be 1D or 2D.
     dt : float
-        Sample interval
-    n_fft : int
-        Number of points in FFT
-    scale : str
-        Linear (power) or dB
-    normalise : Booloean
-        Normalise spectrum to max value
+        Sample interval in seconds.
+    n_fft : int, optional
+        Number of points to use in the FFT. If None, the signal length is used.
+    scale : str, default "linear"
+        Scaling format for the spectrum: "linear" (power) or "dB".
+    normalise : bool, default False
+        If True, normalises the spectrum of each channel to its maximum value.
 
     Returns
     -------
-    f : 1D array of float
-        Frequency vector
-    psd : 2D aray of float
-        Power spectral density
+    f : np.ndarray
+        1D array of float representing the frequency vector.
+    psd : np.ndarray
+        1D or 2D array of float representing the power spectral density.
     """
-    y = y.transpose()
-    f, psd = signal.periodogram(y, fs=1/dt, nfft=n_fft, detrend=False)
-    psd = psd.transpose()  # Periodogram function calculates along dimension 1
+    # SciPy's periodogram calculates along axis=-1
+    y_transposed = y.transpose()
+    f, psd_transposed = signal.periodogram(y_transposed, fs=1.0 / dt,
+                                           nfft=n_fft,
+                                           detrend=False)
+
+    psd = psd_transposed.transpose()
 
     if normalise:
-        if psd.ndim == 1:
-            psd = psd/psd.max()
-        else:
-            n_ch = psd.shape[1]
-            for k in range(n_ch):
-                psd[:, k] = psd[:, k]/psd[:, k].max()
+        max_vals = psd.max(axis=0, keepdims=True)
+        max_vals[max_vals == 0] = 1.0
+        psd = psd / max_vals
+
     if scale.lower() == "db":
-        psd = 10*np.log10(psd)
+        psd = 10.0 * np.log10(np.maximum(psd, 1e-20))
+
     return f, psd
 
 
-def plot_spectrum(t, x, time_unit="s",
-                  y_max=None, f_max=None, n_fft=None,
-                  scale="dB", normalise=True, db_min=-40, ax=None):
-    """Plot time trace and power spectrum on standardised format.
+def plot_spectrum(t: np.ndarray, x: np.ndarray,
+                  n_fft: int | None = None,
+                  time_unit: str = "s",
+                  y_max: float | None = None,
+                  f_max: float | None = None,
+                  db_min: float = -40.0,
+                  scale: str = "dB",
+                  normalise: bool = True,
+                  ax: list[plt.Axes] | None = None) -> int:
+    """Plot time trace and power spectrum in a standardised format.
 
-    Requires evenly sampled points
+    Requires evenly sampled data points.
 
     Parameters
     ----------
-    t : 1D array of float
-        Time vector
-    x : 1D or 2D array of float
-        Values, time trace(s)
-    time_unit : str
-        Unit for time axis, also for frequency scale
-    f_max : float
-        Max. frequency to plot
-    n_fft : int
-        No of points in FFT
-    scale : str
-        Linear (Power)  or dB
-    normalise : bool
-        Normalise to 1 (0 dB) as maximum
-    db_min : float
-        Minimum on dB-scale, re. max.
+    t : np.ndarray
+        1D array of float, time vector.
+    x : np.ndarray
+        1D or 2D array of float, time trace values.
+    time_unit : str, default "s"
+        Unit for the time axis, also determines frequency scale.
+    y_max : float, optional
+        Set symmetric y-axis limits for the time plot.
+    f_max : float, optional
+        Maximum frequency to plot in Hz
+    n_fft : int, optional
+        Number of points in FFT.
+    scale : str, default "dB"
+        Scaling format for the spectrum: "linear" (Power) or "dB".
+    normalise : bool, default True
+        If True, normalises the spectrum to 1.0 (or 0 dB)
+    db_min : float, default -40.0
+        Minimum relative value on the dB scale (dynamic range to show).
+    ax : list of matplotlib.axes.Axes, optional
+        List or array containing two axes objects: [ax_time, ax_freq].
+        If None, a new figure with two subplots will be created.
+
+    Returns
+    -------
+    int
+        Returns 0 upon successful execution.
     """
-    # Pulse in time-domain
+    # Create figure and subplots if axes are not provided
     if ax is None:
         fig = plt.figure(figsize=[10, 10])
         ax = [fig.add_subplot(2, 1, 1), fig.add_subplot(2, 1, 2)]
 
+    # Plot the time-domain pulse
     plot_pulse(ax[0], t, x, time_unit, y_max)
 
-    # Power spectrum
-    dt = t[1] - t[0]   # Assumes even sampling
-
+    # Calculate the power spectrum (assumes even sampling)
+    dt = float(t[1] - t[0])
     f, psd = powerspectrum(x, dt, n_fft=n_fft,
                            scale=scale, normalise=normalise)
 
+    # Get scaling parameters for the frequency axis
     multiplier, freq_unit = find_timescale(time_unit)
 
     if f_max is None:
-        f_max = f.max()
+        f_max = float(f.max())
 
-    if (scale.lower() == "db"):
-        db_lim = np.array([db_min, 0])
+    if scale.lower() == "db":
+        db_lim = np.array([db_min, 0.0])
         if not np.any(np.isnan(psd)):
-            db_lim = psd.max() + db_lim
-        ax[1].set_ylabel(db_lim)
+            db_lim = float(psd.max()) + db_lim
+
+        ax[1].set_ylim(db_lim)
 
         if normalise:
-            spectrumlabel = "Power [dB re. max]"
+            spectrum_label = "Power [dB re. max]"
         else:
-            spectrumlabel = "Power [dB]"
+            spectrum_label = "Power [dB]"
     else:
-        spectrumlabel('Power')
+        spectrum_label = "Power"
 
-    ax[1].plot(f/multiplier, psd)
+    # Plot frequency-domain spectrum
+    ax[1].plot(f / multiplier, psd)
     ax[1].set(xlabel=f"Frequency [{freq_unit}]",
-              xlim=(0, f_max/multiplier),
-              ylabel=spectrumlabel)
+              xlim=(0, f_max / multiplier),
+              ylabel=spectrum_label)
     ax[1].grid(True)
 
     return 0
