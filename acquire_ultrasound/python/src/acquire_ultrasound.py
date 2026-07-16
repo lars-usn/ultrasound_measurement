@@ -37,9 +37,9 @@ COLOR_NEUTRAL = ['#000000', '#FFFFFF']
 COLOR_OFF = '#708090'
 COLOR_CH = ['#004B93', '#D32F2F', '#388E3C', '#FBC02D']
 COLOR_AWG = '#388E3C'
-COLOR_ZOOM = '#C0FFFF'
+COLOR_ZOOM = '#E0FFFF'
 COLOR_AWG_BACKGROUND = '#F5FFFA'
-COLOR_ZOOM_BACKGROUND = '#F0FFFF'
+COLOR_ZOOM_BACKGROUND = '#E0FFFF'
 
 TIMESCALE = 1E-6      # Display scales for time and frequency
 FREQUENCYSCALE = 1E6
@@ -99,13 +99,13 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
         # Initialise instrument variables.
         self.runstate = AcquisitionControl()
-        self.display = Display()         # Scaling and display options
-        self.dso = ps.Communication()    # Instrument connection and status.
+        self.display = Display()        # Scaling and display options
+        self.dso = ps.Picoscope5000A()  # Instrument connection and status
         self.channel = [ps.Channel(0), ps.Channel(1)]    # Vertical channels
-        self.trigger = ps.Trigger()      # Trigger configuration
+        self.trigger = ps.Trigger()     # Trigger configuration
         self.sampling = ps.Horizontal()  # Horisontal configuration (time)
-        self.wfm = us.Waveform()         # Result, storing acquired traces
-        self.pulse = us.Pulse()          # Pulse for function generator output
+        self.wfm = us.Waveform()        # Result, storing acquired traces
+        self.pulse = us.Pulse()         # Pulse for function generator output
         self.rf_filter = us.WaveformFilter()  # Filtering, for display only
         self.pulse.dt = 1/ps.DAC_SAMPLERATE
 
@@ -130,23 +130,21 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         try:
             if 'openunit' in self.dso.status:
                 if not ('close' in self.dso.status):
-                    ps.stop_adc(self.dso, self.dso.status)
-                    ps.close_adc(self.dso, self.dso.status)
+                    self.dso.stop_adc()
+                    self.dso.close_adc()
             self.dso.status = {}
         except AttributeError:
             self.dso.status = {}
 
         # Connect and initialise instrument
-        self.dso = ps.open_adc(self.dso)
+        self.dso.open_adc()
         if self.dso.connected:
             # Check for signal generator
-            self.dso = ps.check_awg(self.dso)
+            self.dso.check_awg()
 
             # Send initial configuration to oscilloscope
-            self.dso.status = self.update_vertical()
-            self.dso.status = self.update_trigger()
-
-            # Update configuration parameters
+            self.update_vertical()
+            self.update_trigger()
             self.update_sampling()
             self.update_pulser()
             self.update_rf_filter()
@@ -173,20 +171,39 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
             errorcode = -1
         return errorcode
 
-    def close_connection(self):
-        """Close instrument connection, does not stop program."""
-        self.statusBar.showMessage('Closing')
-        matplotlib.pyplot.close(self.fig)
+    def close_connection(self) -> tuple[str, int]:
+        """Close instrument connection without stopping the program.
+
+        Attempts to gracefully close the connection to the digitizer/DSO.
+        If the instrument is not connected or fails to respond, the function
+        catches the error to prevent the user interface from crashing.
+
+        Returns
+        -------
+        status : str
+            The connection status of the DSO
+        errorcode : int
+            Returns 0 upon successful closure, or -1 if an error occurred
+            (e.g., instrument not connected).
+        """
+        self.statusBar.showMessage("Closing")
+
+        if hasattr(self, "fig") and self.fig is not None:
+            matplotlib.pyplot.close(self.fig)
+
+        errorcode = 0
         try:
-            self.dso.status = ps.close_adc(self.dso)
-            errorcode = 0
-        except ValueError:
+            if hasattr(self, "dso") and self.dso is not None:
+                self.dso.close_adc()
+            else:
+                errorcode = -1
+        except Exception:
             errorcode = -1
         finally:
             self.close()
 
-        self.statusBar.showMessage('Closed')
-        return self.dso.status, errorcode
+        self.statusBar.showMessage("Closed")
+        return self.dso, errorcode
 
     # Update oscilloscope settings
     def update_vertical(self):
@@ -208,11 +225,10 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
         if self.dso.connected:
             for channel in self.channel:
-                # self.channel[k].no = k
-                self.dso.status = ps.set_vertical(self.dso, channel)
-                self.dso.status = ps.set_bwl(self.dso, channel)
+                self.dso.set_vertical(channel)
+                self.dso.set_bwl(channel)
 
-        return self.dso.status
+        return 0
 
     def update_trigger(self):
         """Read trigger settings from GUI and send to instrument."""
@@ -225,19 +241,19 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         self.sampling.trigger_position = self.triggerPositionSpinBox.value()
 
         if self.dso.connected:
-            self.dso.status = ps.set_trigger(self.dso, self.trigger,
-                                             self.channel, self.sampling)
-        return self.dso.status
+            self.dso.set_trigger(self.trigger, self.channel, self.sampling)
+        return 0
 
     def update_sampling(self):
         """Read trace length from GUI and set sample rate."""
         fs_requested = int(self.samplerateSpinBox.value()*FREQUENCYSCALE)
-        self.sampling.timebase, fs_actual = ps.find_timebase(fs_requested)
+        self.sampling.timebase, fs_actual = self.dso.find_timebase(
+            fs_requested)
         self.sampling.dt = 1/fs_actual
         self.sampling.n_samples = int(self.nSamplesSpinBox.value()*1e3)
 
         if self.dso.connected:
-            self.sampling.dt = ps.get_sample_interval(self.dso, self.sampling)
+            self.sampling.dt = self.dso.get_sample_interval(self.sampling)
 
         self.samplerateSpinBox.setValue(self.sampling.fs()/FREQUENCYSCALE)
 
@@ -251,10 +267,9 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         Plot pulse and send to instrument
         Graph is updated by replacing data
         """
-        print(f'Pulser connected: {self.dso.signal_generator}')
         if not self.dso.signal_generator:
             self.update_transmit_box(available=False)
-            return 0    # Does nothing signal genarator not available
+            return -1    # Does nothing signal genarator not available
 
         else:
             # Read GUI
@@ -283,7 +298,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
                 self.graph[g].set_linestyle(awg_line)
 
             # Send data to pulser
-            self.dso = ps.set_signal(self.dso, self.sampling, self.pulse)
+            self.dso.set_signal(self.sampling, self.pulse)
             self.update_display()
             self.update_transmit_box(available=True, on=self.pulse.on)
 
@@ -320,12 +335,10 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
             self.statusBar.showMessage('Acquiring data ...')
             while not (self.runstate.stop_acquisition):
                 if self.runstate.sampling_changed:
-                    self.dso = ps.configure_acquisition(self.dso,
-                                                        self.sampling)
+                    self.dso.configure_acquisition(self.sampling)
                     self.runstate.sampling_changed = False
-                self.dso, self.wfm.y = ps.acquire_trace(self.dso,
-                                                        self.sampling,
-                                                        self.channel)
+                self.wfm.y = self.dso.acquire_trace(self.sampling,
+                                                    self.channel)
                 self.wfm.dt = self.sampling.dt
                 self.wfm.t0 = self.sampling.t0()
                 self.plot_result()
@@ -426,7 +439,9 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
             message, color = 'Stopped', COLOR_WARNING
         else:
             message, color = 'Acquiring', COLOR_OK
-        return self._update_ui_element(self.statusEdit, message, color)
+
+        message = self._update_ui_element(self.statusEdit, message, color)
+        return message
 
     def update_connected_box(self, connected=False) -> str:
         """Write status of the instrument connection."""
@@ -434,7 +449,8 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
             message, color = 'Not connected', COLOR_WARNING
         else:
             message, color = 'Connected', COLOR_OK
-        return self._update_ui_element(self.connectedEdit, message, color)
+        message = self._update_ui_element(self.connectedEdit, message, color)
+        return message
 
     def update_transmit_box(self, available=False, on=False) -> str:
         """Write whether the waveform generator is transmitting pulses."""
@@ -445,7 +461,8 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         else:
             message, color = 'Off', COLOR_WARNING
 
-        return self._update_ui_element(self.transmitStatusEdit, message, color)
+        self._update_ui_element(self.transmitStatusEdit, message, color)
+        return message
 
     def update_status(self, message, append=False) -> str:
         """Update status message field at bottom of window."""
@@ -657,7 +674,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
         # Time graphs
         for key in ['trace', 'zoom', 'awg']:
-            axis[key].set_xlabel('Time [$\mu$s]')
+            axis[key].set_xlabel(r'Time [$\mu$s]')
             axis[key].set_ylabel('Voltage [V]')
             axis[key].set_xlim(0, 1)
             axis[key].grid(True)
