@@ -22,6 +22,8 @@ import bisect
 
 from picosdk.ps5000a import ps5000a as picoscope
 from picosdk.functions import adc2mV, assert_pico_ok
+from picosdk.errors import PicoSDKCtypesError
+
 from ultrasound_utilities import Pulse
 
 DAC_SAMPLERATE = 500e6   # [Samples/s] Fixed, see Programmer's guide
@@ -348,7 +350,7 @@ class Picoscope5000A:
             could not be closed successfully.
         """
         self.status["close"] = picoscope.ps5000aCloseUnit(self.handle)
-        assert_pico_ok(dso.status["close"])
+        assert_pico_ok(self.status["close"])
         self.connected = False
         return 0
 
@@ -426,7 +428,7 @@ class Picoscope5000A:
                     trigger: Trigger,
                     channel: list[Channel],
                     sampling: Horizontal,
-                    ) -> Picoscope5000A:
+                    ):
         """Configure oscilloscope trigger.
 
         Parameters
@@ -700,10 +702,9 @@ class Picoscope5000A:
         try:
             assert_pico_ok(self.status["sigGenArbMinMax"])
             self.signal_generator = True
-        except AssertionError:
+        except (AssertionError, PicoSDKCtypesError):
             self.signal_generator = False
-
-        return 0
+        return
 
     def set_signal(self, sampling: Horizontal, pulse: Pulse):
         """Send pulse to arbitrary waveform generator.
