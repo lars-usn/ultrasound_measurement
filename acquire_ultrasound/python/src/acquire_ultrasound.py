@@ -17,7 +17,7 @@ Modified July 2026
     - Follow PEP-8 and numpy docstring style guides.
     - Tested on Ubuntu
     - GUI updated to QT6
-    - Massive cleanup in code
+    - Massive cleanup in code with help from Gemini
 
 Remaining
     - Hardware-control of pulser, pad with zeros for correct rep. rate
@@ -47,27 +47,8 @@ TIMESCALE = 1E-6      # Display scales for time and frequency
 FREQUENCYSCALE = 1E6
 V_MAX = 20           # Absolute maximum voltage scale
 
+matplotlib.use('QtAgg')
 oscilloscope_main_window, QtBaseClass = loadUiType('aquire_ultrasound_gui.ui')
-
-
-class MainWindow(QtBaseClass, oscilloscope_main_window):
-    def __init__(self):
-        super().__init__()
-        self.setupUi(self)
-
-        # Sentrerer vinduet på skjermen ved oppstart
-        self.center_on_screen()
-
-    def center_on_screen(self):
-        # Henter skjermstørrelsen til primærskjermen
-        screen = QApplication.primaryScreen().geometry()
-
-        # Beregner midtpunktet basert på vinduets størrelse
-        x = (screen.width() - self.width()) // 2
-        y = (screen.height() - self.height()) // 2
-
-        # Flytter vinduet til de beregnede koordinatene
-        self.move(x, y)
 
 
 class Display:
@@ -109,41 +90,54 @@ class AcquisitionControl:
 
 
 class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
-    """Start GUI and initialise system."""
+    """Main ultrasound acquisition GUI."""
 
     def __init__(self) -> None:
-        """Set up GUI and initialise classes and variables."""
-
         super().__init__()
         self.setupUi(self)
+        self._position_window()
+        self._initialize_components()
+        self._initialize_graphs()
+        self._configure_gui()
 
-        screen = QApplication.primaryScreen().geometry()
-        self.move(int(0.05 * screen.width()), int(0.05 * screen.height()))
+    def _position_window(self) -> None:
+        """Place GUI window near top-left corner of the screen."""
+        geometry = QApplication.primaryScreen().geometry()
+        self.move(int(0.02 * geometry.width()),
+                  int(0.05 * geometry.height()),
+                  )
 
-        # Initialise instrument variables.
+    def _initialize_components(self) -> None:
+        """Initialize acquisition, processing, and display."""
         self.runstate = AcquisitionControl()
-        self.display = Display()        # Scaling and display options
-        self.dso = ps.Picoscope5000A()  # Instrument connection and status
-        self.channel = [ps.Channel(0), ps.Channel(1)]    # Vertical channels
-        self.trigger = ps.Trigger()     # Trigger configuration
-        self.sampling = ps.Horizontal()  # Horisontal configuration (time)
-        self.wfm = us.Waveform()        # Result, storing acquired traces
-        self.pulse = us.Pulse()         # Pulse for function generator output
-        self.rf_filter = us.WaveformFilter()  # Filtering, for display only
-        self.pulse.dt = 1/ps.DAC_SAMPLERATE
 
-        # Open gui and initailse graphs
-        fig, axis, graph = self.define_graphs()
-        self.fig = fig
-        self.axis = axis
-        self.graph = graph
+        # Display and oscilloscope
+        self.dso = ps.Picoscope5000A()
+        self.display = Display()
+        self.sampling = ps.Horizontal()
+        self.channel = [ps.Channel(i) for i in range(2)]
+        self.trigger = ps.Trigger()
 
+        # Waveform processing
+        self.wfm = us.Waveform()
+        self.pulse = us.Pulse()
+        self.rf_filter = us.WaveformFilter()
+        self.pulse.dt = 1 / ps.DAC_SAMPLERATE
+
+    def _initialize_graphs(self) -> None:
+        """Create result graphs."""
+        self.fig, self.axis, self.graph = self.define_graphs()
+
+    def _configure_gui(self) -> None:
+        """Connect signals and initialize widget states."""
         self.connect_gui()
-
         self.update_connected_box(False)
-        self.acquireButton.setEnabled(False)
-        self.transmitButton.setEnabled(False)
-        self.saveButton.setEnabled(False)
+
+        for button in (self.acquireButton,
+                       self.transmitButton,
+                       self.saveButton,
+                       ):
+            button.setEnabled(False)
 
     def connect_dso(self) -> int:
         """Connect, configure, and start the digital storage oscilloscope (DSO).
@@ -750,7 +744,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
             or 'Off').
         """
         if not available:
-            message, color = 'Not available', COLOR_NEUTRAL
+            message, color = 'Not available', COLOR_WARNING
         elif on:
             message, color = 'Transmitting', COLOR_OK
         else:
