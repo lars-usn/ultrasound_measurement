@@ -737,16 +737,16 @@ class Picoscope5000A:
             return 0
 
         if pulse.a == 0:
-            y_scaled = np.zeros_like(pulse.y())
+            y_scaled = np.zeros_like(pulse.y)
         else:
-            y_scaled = pulse.y() / pulse.a * self.awg_max_value
+            y_scaled = pulse.y / pulse.a * self.awg_max_value
 
         pulsedata = y_scaled.astype(ctypes.c_int16)
         buffer_length = ctypes.c_uint32(len(pulsedata))
         index_mode = ctypes.c_int32(0)
         delta_phase = ctypes.c_uint32(0)
 
-        duration = pulse.duration()
+        duration = pulse.duration
         if duration == 0:
             raise ValueError("Pulse duration cannot be 0.")
 

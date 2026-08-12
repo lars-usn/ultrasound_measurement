@@ -404,10 +404,10 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
             self.pulse.a = self.pulseAmplitudeSpinBox.value()
 
             # Update pulse display
-            self.graph['awg'].set_data(self.pulse.t()/TIMESCALE,
-                                       self.pulse.y())
+            self.graph['awg'].set_data(self.pulse.t/TIMESCALE,
+                                       self.pulse.y)
             vlim = 1.1 * self.pulse.a
-            self.axis['awg'].set(xlim=(0, self.pulse.duration() / TIMESCALE),
+            self.axis['awg'].set(xlim=(0, self.pulse.duration / TIMESCALE),
                                  ylim=(-vlim, vlim))
 
             # Calculate and plot pulse spectrum
@@ -592,8 +592,8 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         wfm_zoomed = wfm_filtered.zoomed(self.display.t_lim)
         f, psd = wfm_zoomed.powerspectrum(scale='dB', normalise='True')
 
-        x_data = [wfm_filtered.t() / TIMESCALE,
-                  wfm_zoomed.t() / TIMESCALE,
+        x_data = [wfm_filtered.t / TIMESCALE,
+                  wfm_zoomed.t / TIMESCALE,
                   f / FREQUENCYSCALE]
 
         for ch_no, ch_name in enumerate(ps.CH_NAMES):
