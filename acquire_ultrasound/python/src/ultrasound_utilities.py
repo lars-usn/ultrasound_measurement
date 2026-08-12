@@ -10,7 +10,7 @@ Modified July 2026
 """
 
 from dataclasses import dataclass, field
-from math import pi, radians, log10, floor, frexp
+from math import pi, radians, log10, floor, frexp, isclose
 import numpy as np
 from scipy import signal
 import matplotlib.pyplot as plt
@@ -526,15 +526,16 @@ class WaveformFilter:
         return b, a
 
 
+@dataclass
 class ResultFile:
-    """Path, name, and counter configuration for a result file.
+    """Configuration and metadata for a result file.
 
     Attributes
     ----------
     prefix : str
         Prefix for the file name.
     ext : str
-        File extension (e.g., "trc").
+        File extension (e.g. "trc").
     path : str
         Full path to the file.
     directory : str
@@ -545,7 +546,6 @@ class ResultFile:
         File counter or index.
     """
 
-    # Class attributes with default values and type hints
     prefix: str = "test"
     ext: str = "trc"
     path: str = ""
@@ -554,9 +554,6 @@ class ResultFile:
     counter: int = 0
 
 
-# -----------------------------------------------------------------
-# Utility classes
-# -----------------------------------------------------------------
 def scale_125(x: float) -> float:
     """Find the next number in a 1-2-5-10-20... sequence.
 
@@ -574,16 +571,15 @@ def scale_125(x: float) -> float:
     if x == 0:
         return 1.0
 
-    prefixes = np.array([1, 2, 5, 10])
     magnitude = abs(x)
+    exponent = floor(log10(magnitude))
+    mantissa = magnitude / 10**exponent
 
-    exponent = int(floor(log10(magnitude)))
-    mantissa = magnitude / (10**exponent)
+    for prefix in (1, 2, 5, 10):
+        if mantissa < prefix or isclose(mantissa, prefix):
+            return prefix * 10**exponent
 
-    valid_indices = np.where(prefixes >= mantissa - 0.001)
-    min_prefix = np.min(prefixes[valid_indices])
-
-    return float(min_prefix * (10**exponent))
+    return 10**(exponent + 1)
 
 
 def find_timescale(time_unit: str = "s") -> tuple[float, str]:
@@ -601,21 +597,13 @@ def find_timescale(time_unit: str = "s") -> tuple[float, str]:
     freq_unit : str
         Corresponding frequency unit.
     """
-    match time_unit:
-        case "ns":
-            multiplier = 1e9
-            freq_unit = "GHz"
-        case "us":
-            multiplier = 1e6
-            freq_unit = "MHz"
-        case "ms":
-            multiplier = 1e3
-            freq_unit = "kHz"
-        case _:
-            multiplier = 1.0
-            freq_unit = "Hz"
 
-    return multiplier, freq_unit
+    scales = {"s": (1.0, "Hz"),
+              "ms": (1e3, "kHz"),
+              "us": (1e6, "MHz"),
+              "ns": (1e9, "GHz")}
+
+    return scales.get(time_unit, (1.0, "Hz"))
 
 
 def find_limits(limits: np.ndarray, min_diff: float = 1.0) -> np.ndarray:
@@ -636,13 +624,10 @@ def find_limits(limits: np.ndarray, min_diff: float = 1.0) -> np.ndarray:
     np.ndarray
         1D array containing [min_value, max_value].
     """
-    min_value = float(np.min(limits))
-    max_value = float(np.max(limits))
+    min_value = np.min(limits)
+    max_value = max(np.max(limits), min_value + min_diff)
 
-    # Ensure minimum difference
-    max_value = max(max_value, min_value + min_diff)
-
-    return np.array([min_value, max_value])
+    return np.array([min_value, max_value], dtype=float)
 
 
 def read_scaled_value(quantity: str) -> float:
@@ -660,41 +645,25 @@ def read_scaled_value(quantity: str) -> float:
     -------
     float
         The value scaled according to its metric prefix.
-
-    Examples
-    --------
-    >>> read_scaled_value("3.4 MHz")
-    3400000.0
-    >>> read_scaled_value("100")
-    100.0
     """
-    # Split by any whitespace and remove extra padding
+    prefixes = {"u": 1e-6,
+                "µ": 1e-6,
+                "μ": 1e-6,
+                "m": 1e-3,
+                "k": 1e3,
+                "M": 1e6,
+                "G": 1e9}
+
     parts = quantity.strip().split()
-
     if not parts:
-        return 0.0
+        raise ValueError("Empty input")
 
-    number = float(parts[0])
-
+    value = float(parts[0])
     if len(parts) == 1:
-        return number
+        return value
 
-    prefix = parts[1][0]
-    match prefix:
-        case "u":
-            multiplier = 1e-6
-        case "m":
-            multiplier = 1e-3
-        case "k":
-            multiplier = 1e3
-        case "M":
-            multiplier = 1e6
-        case "G":
-            multiplier = 1e9
-        case _:
-            multiplier = 1.0
-
-    return number * multiplier
+    multiplier = prefixes.get(parts[1][0], 1.0)
+    return value * multiplier
 
 
 def find_filename(prefix: str = "test",
@@ -721,69 +690,65 @@ def find_filename(prefix: str = "test",
     ResultFile
         Instance of the ResultFile class populated with the new file details.
     """
-    resultfile = ResultFile()
+
     prefix = prefix.lower()
-    ext = ext.lower().split(".")[-1]
+    ext = ext.removeprefix(".").lower()
 
     base_dir = Path(resultdir).resolve()
     base_dir.mkdir(parents=True, exist_ok=True)
 
     counter_file = base_dir / f"{prefix}.cnt"
 
-    # Read existing counter or start at 0
-    if counter_file.is_file():
-        try:
-            counter = int(counter_file.read_text().strip())
-        except ValueError:
-            counter = 0
-    else:
+    try:
+        counter = int(counter_file.read_text().strip())
+    except (FileNotFoundError, ValueError):
         counter = 0
 
     date_code = date.today().strftime("%Y_%m_%d")
 
-    # Find the lowest free file number
+    # Find the lowest free file number, starting at counter value
     while True:
         counter += 1
         filename = f"{prefix}_{date_code}_{counter:04d}.{ext}"
-        result_path = base_dir / filename
+        path = base_dir / filename
 
-        if not result_path.is_file():
+        if not path.exists():
             break
 
-    # Save the updated counter back to the file
     counter_file.write_text(str(counter))
 
-    # Populate resultFile
-    resultfile.prefix = prefix
-    resultfile.counter = counter
-    resultfile.ext = ext
-    resultfile.directory = str(base_dir)
-    resultfile.name = filename
-    resultfile.path = str(result_path)
-
-    return resultfile
+    return ResultFile(prefix=prefix,
+                      counter=counter,
+                      ext=ext,
+                      directory=str(base_dir),
+                      name=filename,
+                      path=str(path))
 
 
 def plot_pulse(ax: plt.Axes | None = None,
-               t: np.ndarray = None,
-               y: np.ndarray = None,
+               t: np.ndarray | None = None,
+               y: np.ndarray | None = None,
                time_unit: str = "s",
-               y_max: float | None = None) -> int:
-    """Plot a pulse as a time-trace in a standardised graph."""
+               y_max: float | None = None) -> None:
+    """Plot a pulse as a standardized time trace."""
+
+    if t is None or y is None:
+        raise ValueError("Both t and y must be provided.")
+
+    if len(t) != len(y):
+        raise ValueError("t and y must have the same length.")
+
     if ax is None:
         ax = plt.gca()
 
-    print(f't={t}')
-    print(f'y={y}')
-    print('ax={ax}')
+    multiplier, _ = find_timescale(time_unit)
 
-    multiplier, freq_unit = find_timescale(time_unit)
     ax.plot(t * multiplier, y)
     ax.set(xlabel=f"Time [{time_unit}]", ylabel="Amplitude")
     ax.grid(True)
 
     if y_max is not None:
-        ax.set_ylim(y_max * np.array([-1.0, 1.0]))
+        ax.set_ylim(-y_max, y_max)
 
     return
 
@@ -819,16 +784,14 @@ def powerspectrum(y: np.ndarray, dt: float,
     psd : np.ndarray
         1D or 2D array of float representing the power spectral density.
     """
-    # SciPy's periodogram calculates along axis=-1
-    y_transposed = y.transpose()
-    f, psd_transposed = signal.periodogram(y_transposed, fs=1.0 / dt,
-                                           nfft=n_fft,
-                                           detrend=False)
+    if dt <= 0:
+        raise ValueError("dt must be positive.")
 
-    psd = psd_transposed.transpose()
+    f, psd = signal.periodogram(y, fs=1.0 / dt, nfft=n_fft,
+                                detrend=False, scaling="density", axis=0)
 
     if normalise:
-        max_vals = psd.max(axis=0, keepdims=True)
+        max_vals = np.max(psd, axis=0, keepdims=True)
         max_vals[max_vals == 0] = 1.0
         psd = psd / max_vals
 
@@ -846,7 +809,7 @@ def plot_spectrum(t: np.ndarray, y: np.ndarray,
                   db_min: float = -40.0,
                   scale: str = "dB",
                   normalise: bool = True,
-                  ax: list[plt.Axes] | None = None) -> int:
+                  ax: list[plt.Axes] | None = None):
     """Plot time trace and power spectrum in a standardised format.
 
     Requires evenly sampled data points.
@@ -855,7 +818,7 @@ def plot_spectrum(t: np.ndarray, y: np.ndarray,
     ----------
     t : np.ndarray
         1D array of float, time vector.
-    x : np.ndarray
+    y : np.ndarray
         1D or 2D array of float, time trace values.
     time_unit : str, default "s"
         Unit for the time axis, also determines frequency scale.
@@ -875,29 +838,34 @@ def plot_spectrum(t: np.ndarray, y: np.ndarray,
         List or array containing two axes objects: [ax_time, ax_freq].
         If None, a new figure with two subplots will be created.
 
-    Returns
-    -------
-    int
-        Returns 0 upon successful execution.
-    """
-    # Create figure and subplots if axes are not provided
-    if ax is None:
-        fig = plt.figure(figsize=[10, 10])
-        ax = [fig.add_subplot(2, 1, 1), fig.add_subplot(2, 1, 2)]
+        """
+    if t.ndim != 1:
+        raise ValueError("t must be a 1D array")
 
-    # Plot the time-domain pulse
+    if len(t) < 2:
+        raise ValueError("At least two time samples are required")
+
+    if y.shape[0] != len(t):
+        raise ValueError("t and y must have matching lengths")
+
+    dt = np.diff(t)
+    if not np.allclose(dt, dt[0]):
+        raise ValueError("Time vector must be evenly sampled")
+
+    if ax is None:
+        fig, ax = plt.subplots(2, 1, figsize=(10, 10), constrained_layout=True)
+
+    # Plot time-domain pulse
     plot_pulse(ax[0], t, y, time_unit, y_max)
 
-    # Calculate the power spectrum (assumes even sampling)
+    # Calculate power spectrum (assumes even sampling)
     dt = float(t[1] - t[0])
     f, psd = powerspectrum(y, dt, n_fft=n_fft,
                            scale=scale, normalise=normalise)
 
-    # Get scaling parameters for the frequency axis
+    # Get scaling parameters for frequency axis
     multiplier, freq_unit = find_timescale(time_unit)
-
-    if f_max is None:
-        f_max = float(f.max())
+    f_limit = float(f.max()) if f_max is None else f_max
 
     if scale.lower() == "db":
         db_lim = np.array([db_min, 0.0])
@@ -916,8 +884,8 @@ def plot_spectrum(t: np.ndarray, y: np.ndarray,
     # Plot frequency-domain spectrum
     ax[1].plot(f / multiplier, psd)
     ax[1].set(xlabel=f"Frequency [{freq_unit}]",
-              xlim=(0, f_max / multiplier),
+              xlim=(0, f_limit / multiplier),
               ylabel=spectrum_label)
     ax[1].grid(True)
 
-    return 0
+    return
