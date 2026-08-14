@@ -836,8 +836,6 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         - Updates the `self.display.t_lim` storage object (scaled back to base units).
         - Redraws the Matplotlib figure canvas via `self.fig.canvas.draw()`.
         """
-
-        start = time.monotonic()
         scale_map = {'s': 1.0, 'ms': 1e-3, 'us': 1e-6}
         if time_unit not in scale_map:
             raise ValueError(f"Invalid time_unit '{time_unit}'. Expected one of {
@@ -901,7 +899,6 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         self.axis['spectrum'][0].set_xlim(*f_lim)
         self.axis['awgspec'].set_ylim(db_lim)
         self.axis['awgspec'].set_xlim(*f_lim)
-        print(f' 6 {(time.monotonic()-start):.3f} s  ', end='')
 
         self.fig.canvas.draw()
         return
