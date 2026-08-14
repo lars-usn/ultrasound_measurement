@@ -26,6 +26,7 @@ from PySide6 import QtWidgets
 from PySide6.QtWidgets import QApplication
 from PySide6.QtUiTools import loadUiType
 
+import time
 import sys
 import matplotlib
 
@@ -275,7 +276,8 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
             channel.v_range = us.read_scaled_value(
                 self.rangeComboBox[channel_no].currentText())
-            channel.v_range = self.channel[channel_no].v_max()
+
+            channel.v_range = self.channel[channel_no].v_max
             channel.coupling = self.couplingComboBox[channel_no].currentText()
             channel.offset = self.offsetSpinBox[channel_no].value()
 
@@ -356,7 +358,8 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         if self.dso.connected:
             self.sampling.dt = self.dso.get_sample_interval(self.sampling)
 
-        self.samplerateSpinBox.setValue(self.sampling.fs()/FREQUENCYSCALE)
+        self.samplerateSpinBox.setValue(
+            self.sampling.sample_rate/FREQUENCYSCALE)
         self.runstate.sampling_changed = True
         return
 
@@ -438,7 +441,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         - Modifies properties (`sample_rate`, `type`, `f_min`, `f_max`, 
           `order`) on the `self.rf_filter` object.
         """
-        self.rf_filter.sample_rate = self.sampling.fs()
+        self.rf_filter.sample_rate = self.sampling.sample_rate
         self.rf_filter.type = self.filterComboBox.currentText()
         self.rf_filter.f_min = self.fminSpinBox.value()*FREQUENCYSCALE
         self.rf_filter.f_max = self.fmaxSpinBox.value()*FREQUENCYSCALE
@@ -503,15 +506,18 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
             self.update_status_box(True)
             self.statusBar.showMessage('Acquiring data ...')
+
             while not (self.runstate.stop_acquisition):
                 if self.runstate.sampling_changed:
                     self.dso.configure_acquisition(self.sampling)
                     self.runstate.sampling_changed = False
+
                 self.wfm.y = self.dso.acquire_trace(self.sampling,
                                                     self.channel)
                 self.wfm.dt = self.sampling.dt
-                self.wfm.t0 = self.sampling.t0()
+                self.wfm.t0 = self.sampling.start_time
                 self.plot_result()
+
         self.update_status_box(False)
         self.statusBar.showMessage('Ready')
         self.runstate.stop_acquisition = False
@@ -596,7 +602,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
                   wfm_zoomed.t / TIMESCALE,
                   f / FREQUENCYSCALE]
 
-        for ch_no, ch_name in enumerate(ps.CH_NAMES):
+        for ch_no, ch_name in enumerate(ps.CHANNEL_NAMES):
             lines = [self.graph[key][ch_no]
                      for key in ['trace', 'zoom', 'spectrum']]
 
@@ -613,7 +619,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         # self.fig.canvas.draw()       # --- TRY: Probably necessary
         self.fig.canvas.flush_events()    # --- TRY: Probably unnecessary
         self.update_display()
-        return 0
+        return
 
     def save_result(self) -> int:
         """Save measured traces and parameters to a binary file.
@@ -830,6 +836,8 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         - Updates the `self.display.t_lim` storage object (scaled back to base units).
         - Redraws the Matplotlib figure canvas via `self.fig.canvas.draw()`.
         """
+
+        start = time.monotonic()
         scale_map = {'s': 1.0, 'ms': 1e-3, 'us': 1e-6}
         if time_unit not in scale_map:
             raise ValueError(f"Invalid time_unit '{time_unit}'. Expected one of {
@@ -838,11 +846,11 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         current_timescale = scale_map[time_unit]
 
         # Full trace
-        t0_scaled = self.sampling.t0() / current_timescale
-        tmax_scaled = self.sampling.t_max() / current_timescale
+        t0_scaled = self.sampling.start_time / current_timescale
+        tmax_scaled = self.sampling.end_time / current_timescale
         self.axis['trace'][0].set_xlim(t0_scaled, tmax_scaled)
 
-        # 2. Selected interval, 'zoom'
+        # Selected interval, 'zoom'
         zoom_range = [self.zoomStartSpinBox.value(),
                       self.zoomEndSpinBox.value()]
         t_lim = us.find_limits(zoom_range, min_diff=0.1)
@@ -850,7 +858,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
         self.graph['zoom_area'].set_x(t_lim[0])
         self.graph['zoom_area'].set_width(t_lim[1] - t_lim[0])
-        # Pakker ut verdiene for Matplotlib
+
         self.axis['zoom'][0].set_xlim(*t_lim)
 
         # Vertical scale
@@ -881,7 +889,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
             vzoom = us.read_scaled_value(vrange.currentText())
             ax_zoom.set_ylim(-vzoom, vzoom)
 
-            v_max = ch.v_max()
+            v_max = ch.v_max
             ax_trace.set_ylim(-v_max, v_max)
 
             ax_spectrum.set_ylim(db_lim)
@@ -893,6 +901,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         self.axis['spectrum'][0].set_xlim(*f_lim)
         self.axis['awgspec'].set_ylim(db_lim)
         self.axis['awgspec'].set_xlim(*f_lim)
+        print(f' 6 {(time.monotonic()-start):.3f} s  ', end='')
 
         self.fig.canvas.draw()
         return
@@ -1060,7 +1069,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         for key in ['trace', 'zoom', 'spectrum']:
             axis[key] = [axis[key], axis[key].twinx()]
 
-        for ch_idx, ch_name in enumerate(ps.CH_NAMES):
+        for ch_idx, ch_name in enumerate(ps.CHANNEL_NAMES):
             color = COLOR_CH[ch_idx]
 
             # Time domain
