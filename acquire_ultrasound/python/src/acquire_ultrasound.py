@@ -141,12 +141,12 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
             button.setEnabled(False)
 
     def connect_dso(self) -> int:
-        """Connect, configure, and start the digital storage oscilloscope (DSO).
+        """Connect, configure, and start the digital storage oscilloscope.
 
-        This method attempts to clean up any existing active connections, 
-        opens a new session with the instrument, and applies the initial 
-        configuration (vertical settings, trigger, sampling, pulser, 
-        RF filter, and display). It also updates the GUI buttons and status 
+        This method attempts to clean up any existing active connections,
+        opens a new session with the instrument, and applies the initial
+        configuration (vertical settings, trigger, sampling, pulser,
+        RF filter, and display). It also updates the GUI buttons and status
         bars based on the connection success state.
 
         Returns
@@ -159,7 +159,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         Raises
         ------
         AttributeError
-            Handled internally if `self.dso.status` does not exist during 
+            Handled internally if `self.dso.status` does not exist during
             the initial cleanup phase.
 
         """
@@ -250,23 +250,25 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         return self.dso, errorcode
 
     def update_vertical(self):
-        """Read vertical settings from the GUI and apply them to the instrument.
+        """Read vertical settings from the GUI and apply them to the
+           oscilloscope.
 
-        This method synchronizes the software channel configurations with the 
-        current states of the GUI widgets (range, coupling, offset, and 
-        bandwidth limits) for all available channels. If the instrument is 
+        This method synchronizes the software channel configurations with the
+        current states of the GUI widgets (range, coupling, offset, and
+        bandwidth limits) for all available channels. If the instrument is
         connected, these settings are transmitted to the hardware.
 
         Side Effects
         ------------
         - Enables both `self.channel[0]` and `self.channel[1]` unconditionally.
-        - Modifies properties (`v_range`, `coupling`, `offset`, `bwl`) on all 
+        - Modifies properties (`v_range`, `coupling`, `offset`, `bwl`) on all
           channel objects within `self.channel`.
-        - Transmits configurations to `self.dso` if a hardware connection is active.
+        - Transmits configurations to `self.dso` if a hardware connection is
+          active.
 
         Notes
         -----
-        Both input traces are hardcoded to be acquired always, regardless of 
+        Both input traces are hardcoded to be acquired always, regardless of
         individual GUI enable/disable states.
         """
         self.channel[0].enabled = True  # Both traces are always aquired
@@ -294,23 +296,25 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     def update_trigger(self):
         """Read trigger settings from the GUI and send them to the instrument.
 
-        This method extracts the current user inputs from the trigger-related 
-        GUI controls, scales the time-based values appropriately, updates 
-        the internal trigger and sampling states, and applies the 
+        This method extracts the current user inputs from the trigger-related
+        GUI controls, scales the time-based values appropriately, updates
+        the internal trigger and sampling states, and applies the
         configuration to the oscilloscope.
 
 
         Side Effects
         ------------
-        - Updates properties (`source`, `direction`, `level`, `delay`, `autodelay`) 
-          on the `self.trigger` object.
-        - Updates the `trigger_position` property on the `self.sampling` object.
-        - Transmits the new trigger configuration to `self.dso` using the active 
-          channels and sampling settings, provided a hardware connection exists.
+        - Updates properties (`source`, `direction`, `level`, `delay`,
+          `autodelay`) on the `self.trigger` object.
+        - Updates the `trigger_position` property on the `self.sampling`
+          object.
+          - Transmits the new trigger configuration to `self.dso` using the
+            active channels and sampling settings, provided a hardware
+            connection exists.
 
         Notes
         -----
-        - The trigger delay is automatically scaled using the global 
+        - The trigger delay is automatically scaled using the global
           `TIMESCALE` constant.
         """
         self.trigger.source = self.triggerSourceComboBox.currentText()
@@ -328,25 +332,25 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     def update_sampling(self):
         """Read sampling settings from the GUI and configure the timebase.
 
-        Retrieves requested sample rate and number of samples from GUI, 
-        queries the instrument hardware to find the closest matching 
-        hardware timebase, and updates internal sampling parameters. If the 
-        ocilloscope is connected, it verifies the actual hardware sampling 
-        interval and updates the GUI value to display the actual 
+        Retrieves requested sample rate and number of samples from GUI,
+        queries the instrument hardware to find the closest matching
+        hardware timebase, and updates internal sampling parameters. If the
+        ocilloscope is connected, it verifies the actual hardware sampling
+        interval and updates the GUI value to display the actual
         hardware-supported sample rate.
 
         Side Effects
         ------------
-        - Modifies properties (`timebase`, `dt`, `n_samples`) on the 
+        - Modifies properties (`timebase`, `dt`, `n_samples`) on the
           `self.sampling` object.
-        - Updates `self.samplerateSpinBox` to reflect the actual, 
+        - Updates `self.samplerateSpinBox` to reflect the actual,
           hardware-limited sampling frequency.
         - Sets the boolean flag `self.runstate.sampling_changed` to True.
         - Calls methods on `self.dso` to query timebase and sample interval.
 
         Notes
         -----
-        - The requested sample rate is scaled using the global `FREQUENCYSCALE` 
+        - The requested sample rate is scaled using the global `FREQUENCYSCALE`
           constant before being passed to the DSO driver.
         """
         fs_requested = int(self.samplerateSpinBox.value()*FREQUENCYSCALE)
@@ -366,19 +370,20 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     def update_pulser(self):
         """Read pulse settings from the GUI, update plots, and program the AWG.
 
-        This method reads arbitrary waveform generator (AWG) parameters from 
-        the GUI (envelope, shape, frequency, duration, phase, and amplitude) 
-        and transfers them to the AWG in the oscilloscope. It computes and 
-        updates both the time-domain pulse signal graph and its corresponding 
-        power spectrum graph. If an AWG is supported by the connected hardware, 
-        the waveform data is transmitted to the instrument; otherwise, the 
+        This method reads arbitrary waveform generator (AWG) parameters from
+        the GUI (envelope, shape, frequency, duration, phase, and amplitude)
+        and transfers them to the AWG in the oscilloscope. It computes and
+        updates both the time-domain pulse signal graph and its corresponding
+        power spectrum graph. If an AWG is supported by the connected hardware,
+        the waveform data is transmitted to the instrument; otherwise, the
         execution aborts early.
 
         Returns
         -------
         int
             Status code of the pulser update attempt.
-            -1 : Aborted because the hardware does not support a signal generator.
+            -1 : Aborted because the hardware does not support a signal
+                 generator.
              0 : Successfully processed settings, updated plots, and sent data.
 
         Side Effects
@@ -386,7 +391,8 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         - Modifies properties (`on`, `envelope`, `shape`, `f0`, `n_cycles`,
           `phase`, `a`) on the `self.pulse` object.
         - Updates data and axis limits for the `self.graph['awg']` plot.
-        - Computes the pulse power spectrum and updates `self.graph['awgspec']`.
+        - Computes the pulse power spectrum and updates
+          `self.graph['awgspec']`.
         - Alters the line style ('solid' vs 'dotted') based on whether
           the pulser output is currently toggled active.
         - Updates the GUI transmit panel state.
@@ -432,13 +438,13 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     def update_rf_filter(self):
         """Read RF noise filter settings from the GUI and update filter state.
 
-        Retrieves the requested filter type, cutoff frequencies, and 
+        Retrieves the requested filter type, cutoff frequencies, and
         filter order from the GUI widgets. Reads the sampling rate
         from the system to scale the filter.
 
         Side Effects
         ------------
-        - Modifies properties (`sample_rate`, `type`, `f_min`, `f_max`, 
+        - Modifies properties (`sample_rate`, `type`, `f_min`, `f_max`,
           `order`) on the `self.rf_filter` object.
         """
         self.rf_filter.sample_rate = self.sampling.sample_rate
@@ -451,14 +457,14 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     def control_acquisition(self):
         """Control data acquisition from oscilloscope.
 
-        This method checks the state of the acquisition button. If the 
-        button is checked (active), it initiates a new trace acquisition loop. 
-        If the button is unchecked (inactive), it requests the instrument to 
+        This method checks the state of the acquisition button. If the
+        button is checked (active), it initiates a new trace acquisition loop.
+        If the button is unchecked (inactive), it requests the instrument to
         halt any ongoing data collection.
 
         Side Effects
         ------------
-        - Invokes either `self.acquire_trace` or `self.stop_acquisition` 
+        - Invokes either `self.acquire_trace` or `self.stop_acquisition`
           depending on the boolean state of `self.acquireButton`.
 
         """
@@ -469,13 +475,13 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         return
 
     def acquire_trace(self):
-        """Acquire waveforms from the instrument in a continuous measurement loop.
+        """Acquire waveforms from the oscilloscope in a continuous loop.
 
-        Locks the acquisition state and enters a polling loop that repeatedly 
-        captures data traces from the hardware as long as the shutdown flag 
-        (`stop_acquisition`) is false. Forces the hardware to reconfigure if 
+        Locks the acquisition state and enters a polling loop that repeatedly
+        captures data traces from the hardware as long as the shutdown flag
+        (`stop_acquisition`) is false. Forces the hardware to reconfigure if
         sampling parameters were modified prior to or during the loop.
-        Each captured trace updates the internal waveform memory and triggers 
+        Each captured trace updates the internal waveform memory and triggers
         a redraw of the plots.
 
 
@@ -497,8 +503,9 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
            separate `QThread`.
         """
         if self.runstate.oscilloscope_ready:
+            # UIpdate status flags, buttons, and messages
             self.runstate.oscilloscope_ready = False
-            self.runstate_sampling_changed = True
+            self.runstate.sampling_changed = True
 
             self.saveButton.setEnabled(True)
             self.closeButton.setEnabled(False)
@@ -508,14 +515,17 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
             self.statusBar.showMessage('Acquiring data ...')
 
             while not (self.runstate.stop_acquisition):
+                # Reconfigure if sapling parameteres changed
                 if self.runstate.sampling_changed:
                     self.dso.configure_acquisition(self.sampling)
                     self.runstate.sampling_changed = False
 
+                # Read and interpret result from osciloscope
                 self.wfm.y = self.dso.acquire_trace(self.sampling,
                                                     self.channel)
                 self.wfm.dt = self.sampling.dt
                 self.wfm.t0 = self.sampling.start_time
+
                 self.plot_result()
 
         self.update_status_box(False)
@@ -552,17 +562,17 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     def plot_result(self, time_unit: str = 'us'):
         """Process and plot the measured waveform trace on the screen.
 
-        Applies the RF noise filter to the current waveform, crops the signal 
-        to the display time limits, and calculates its power spectrum 
-        in decibels (dB). It then updates the data of existing 
-        Matplotlib line objects for each active channel across three plots: 
-        raw trace, zoomed trace, and spectrum. Inactive channels are cleared 
+        Applies the RF noise filter to the current waveform, crops the signal
+        to the display time limits, and calculates its power spectrum
+        in decibels (dB). It then updates the data of existing
+        Matplotlib line objects for each active channel across three plots:
+        raw trace, zoomed trace, and spectrum. Inactive channels are cleared
         from the display.
 
         Parameters
         ----------
         time_unit : str, default 'us'
-            The physical unit to use for the time axis. Must be one of 
+            The physical unit to use for the time axis. Must be one of
             {'s', 'ms', 'us'}.
 
         Raises
@@ -572,11 +582,15 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
         Side Effects
         ------------
-        - Extracts and transforms data from `self.wfm` via filtering and zooming.
-        - Modifies the data arrays of Matplotlib line objects inside `self.graph` 
+        - Extracts and transforms data from `self.wfm` via filtering and
+          zooming.
+        - Modifies the data arrays of Matplotlib line objects inside
+          `self.graph`
           by calling `set_data()`.
-        - Empties lines for channels that are disabled in `self.display.channel`.
-        - Forces Matplotlib to process pending events via `self.fig.canvas.flush_events()`.
+        - Empties lines for channels that are disabled in
+          `self.display.channel`.
+        - Forces Matplotlib to process pending events via
+          `self.fig.canvas.flush_events()`.
         - Triggers an interface redraw by invoking `self.update_display()`.
 
         Notes

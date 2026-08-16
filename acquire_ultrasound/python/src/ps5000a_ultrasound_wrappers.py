@@ -373,8 +373,8 @@ class Picoscope5000A:
         Raises
         ------
         PicoSDKCtypesError
-            If the PicoScope SDK returns a status code indicating that setting the
-            bandwidth filter failed.
+            If the PicoScope SDK returns a status code indicating that setting
+            the bandwidth filter failed.
         """
         bwl_param = ctypes.c_int32(int(channel.bwl))
 
