@@ -26,7 +26,7 @@ from PySide6 import QtWidgets
 from PySide6.QtWidgets import QApplication
 from PySide6.QtUiTools import loadUiType
 
-import time
+# import time  # For profiling
 import sys
 import numpy as np
 import matplotlib
@@ -953,18 +953,18 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         Sets up plot layout, configures dual y-axes (twinx) for
         multi-channel RF data, applies background theme coloring to
         distinguish between raw traces, zoomed intervals, and pulse generator
-        responses, and instantiates empty line objects for high-speed updates.
+        responses, and creates empty line objects for high-speed updates.
 
         Returns
         -------
         fig : matplotlib.figure.Figure
-            Handle to the created Matplotlib result figure.
+            Handle to the created result figure.
         axis : dict of list of matplotlib.axes.Axes
             Dictionary where keys are plot names ('trace', 'zoom', etc.)
             and values are lists of axes handles (index 0 for ChA, 1 for ChB).
         graph : dict
             Dictionary containing the fast-update line objects (`Line2D`)
-            and visual indicators (like the `axvspan` zoom area).
+            and visual indicators, e.g. `axvspan` zoom area.
         """
         # Figure layout
         axgrid = [['trace'] * 3,
