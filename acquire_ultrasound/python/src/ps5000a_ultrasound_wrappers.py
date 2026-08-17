@@ -120,7 +120,7 @@ class Horizontal:
 
     @property
     def sample_rate(self) -> float:
-        """Sampling rate in samples per second."""
+        """Sample rate in samples per second."""
         return 1.0 / self.dt
 
     @property

@@ -73,7 +73,7 @@ class Waveform:
         m, e = frexp(self.n_samples)
         n = 2 ** (e + upsample)
 
-        return max(n, 2048)
+        return max(n, 1024)
 
     @property
     def f(self) -> np.ndarray:
