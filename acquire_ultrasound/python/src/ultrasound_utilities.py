@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 
 from datetime import date
 from pathlib import Path
+from enum import StrEnum
 
 
 @dataclass
@@ -90,6 +91,11 @@ class Waveform:
     def filtered(self, wave_filter):
         """Return filtered copy of waveform."""
         filter_type = (str(wave_filter.filter_type).strip().lower())
+
+        print('')
+        print('filtered method')
+        print(wave_filter)
+        print('')
 
         if filter_type.startswith("no"):
             y_filtered = self.y.copy()
@@ -466,64 +472,58 @@ class Pulse:
         return 0
 
 
-@dataclass
+class FilterType(StrEnum):
+    """Supported waveform filter types."""
+    BYPASS = "No"
+    AC = "AC"
+    RF = "RF filter"
+
+
+@dataclass(slots=True)
 class WaveformFilter:
-    """Digital filter definition for waveform processing.
+    """Digital filter definition for waveform processing."""
 
-    Parameters
-    ----------
-    filter_type : str
-        Filter type ("No", "AC", "BPF").
-    f_min : float
-        Lower cutoff frequency in Hz.
-    f_max : float
-        Upper cutoff frequency in Hz.
-    order : int
-        Butterworth filter order.
-    fs : float
-        Sampling frequency in Hz.
-    """
-
-    filter_type: str = "No"
+    filter_type: FilterType = FilterType.BYPASS
     f_min: float = 100e3
     f_max: float = 10e6
     order: int = 2
-    fs: float = 100e6
+    sample_rate: float = 100e6
 
     @property
     def nyquist(self) -> float:
-        """Nyquist frequency."""
-        return self.fs / 2.0
+        """Nyquist frequency in Hz."""
+        return self.sample_rate / 2
+
+    def validate(self) -> None:
+        """Validate filter parameters."""
+
+        if self.sample_rate <= 0:
+            raise ValueError("sample_rate must be positive")
+
+        if self.order < 1:
+            raise ValueError("order must be >= 1")
+
+        if self.f_max <= self.f_min:
+            raise ValueError("f_max must be greater than f_min")
 
     def normalized_cutoffs(self) -> np.ndarray:
         """Return cutoff frequencies normalized to Nyquist."""
         return np.array([self.f_min, self.f_max]) / self.nyquist
 
     def coefficients(self) -> tuple[np.ndarray, np.ndarray]:
-        """Calculate filter coefficients (b, a) from the filter description.
+        """Return Butterworth filter coefficients."""
 
-        Determines the filter type (lowpass, highpass, or bandpass) from
-        the cutoff frequencies and calculates the coefficients.
-
-        Returns
-        -------
-        b : np.ndarray
-            The numerator coefficient array of the filter.
-        a : np.ndarray
-            The denominator coefficient array of the filter.
-        """
-        fn_vals = self.fn()
-        if fn_vals[0] <= 0:
-            b, a = signal.butter(self.order, fn_vals[1],
+        self.validate()
+        fn = self.normalized_cutoffs()
+        if fn[0] <= 0:
+            return signal.butter(self.order, fn[1],
                                  btype="lowpass", output="ba")
-        elif fn_vals[1] > 0.5:
-            b, a = signal.butter(self.order, fn_vals[0],
-                                 btype="highpass", output="ba")
-        else:
-            b, a = signal.butter(self.order, fn_vals,
-                                 btype="bandpass", output="ba")
 
-        return b, a
+        if fn[1] > 1.0:
+            return signal.butter(self.order, fn[0],
+                                 btype="highpass", output="ba")
+
+        return signal.butter(self.order, fn, btype="bandpass", output="ba")
 
 
 @dataclass

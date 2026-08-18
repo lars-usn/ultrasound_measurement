@@ -21,6 +21,13 @@ Modified July 2026
 
 Remaining
     - Hardware-control of pulser, pad with zeros for correct rep. rate
+    - Speed: Datsa acquisition and interpretation is fast, updating plots
+      consumes almost all time, and is a bit slow. Try to solve with blit.
+    - Averaging: Seems easy, as the acqusition is fast, approx. 1/100 s for
+      20 000 points in 2 channnels.
+    - Trigger: Being changed to more structured setup, not ready yet
+    - Combo boxes: Items addded programmatically to use StrEnums defined in
+      code. Must be corrected in Qt Designer ver. 6
 """
 from PySide6 import QtWidgets
 from PySide6.QtWidgets import QApplication
@@ -41,7 +48,8 @@ COLOR = {'warning': ('#78281F', '#FADBD8'),
          'neutral': ('#000000', '#FFFFFF'),
          'off': '#708090',
          'channel': ('#004B93', '#D32F2F', '#388E3C', '#FBC02D'),
-         'awg': ('#388E3C', '#F5FFFA'),
+         #         'awg': ('#388E3C', '#F5FFFA'),
+         'awg': ('#20B2AA', '#F5FFFA'),
          'zoom': ('#B0E0E6', '#E0FFFF'),
          }
 
@@ -289,7 +297,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         """
         # Read settings from GUI
         self.trigger.source = self.triggerSourceComboBox.currentText()
-        self.trigger.direction = self.triggerModeComboBox.currentText()
+        self.trigger.direction = self.triggerModeComboBox.currentData()
         self.trigger.level = self.triggerLevelSpinBox.value()
         self.trigger.delay = self.triggerDelaySpinBox.value()*TIMESCALE
         self.trigger.autodelay = self.triggerAutoDelaySpinBox.value()*1e-3
@@ -303,36 +311,43 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         return
 
     def update_sampling(self):
-        """Read sampling settings from THE GUI and configure the timebase.
+        """Read sampling settings from the GUI and configures the timebase.
 
         Reads requested sample rate and number of samples from GUI,
         queries the instrument hardware to find the closest matching
         hardware timebase, and updates internal sampling parameters.
         Verifies the actual hardware sampling interval and updates the GUI
         value to display the actual hardware-supported sample rate.
-
-        Side Effects
-        ------------
-        - Modifies properties (`timebase`, `dt`, `n_samples`) on the
-          `self.sampling` object.
-        - Updates `self.samplerateSpinBox` to reflect the actual,
-          hardware-limited sampling frequency.
-        - Sets the boolean flag `self.runstate.sampling_changed` to notify
-          that configuratiohas changed.
-        - Calls methods on `self.dso` to query timebase and sample interval.
         """
-        fs_requested = int(self.samplerateSpinBox.value()*FREQUENCYSCALE)
+        requested_rate = int(self.samplerateSpinBox.value() * FREQUENCYSCALE)
         self.sampling.n_samples = int(self.nSamplesSpinBox.value()*1e3)
 
-        if self.dso.connected:
-            self.sampling.timebase, fs_actual = self.dso.find_timebase(
-                fs_requested)
-            self.sampling.dt = self.dso.get_sample_interval(self.sampling)
+        if not self.dso.connected:
+            return
 
-            self.samplerateSpinBox.setValue(
-                self.sampling.sample_rate/FREQUENCYSCALE)
+        self._sync_sampling_with_hardware(requested_rate)
+        self._update_sampling_gui()
+        self.runstate.sampling_changed = True
 
-            self.runstate.sampling_changed = True
+        return
+
+    def _sync_sampling_with_hardware(self, requested_rate: int) -> None:
+        """Query instrument to update internal sampling parameters."""
+        timebase, sample_rate = self.dso.find_timebase(requested_rate)
+
+        self.sampling.timebase = timebase
+        self.sampling.dt = self.dso.get_sample_interval(self.sampling)
+        return
+
+    def _update_sampling_gui(self) -> None:
+        """Update GUI elements to reflect actual hardware-supported values."""
+        actual_rate_scaled = self.sampling.sample_rate / FREQUENCYSCALE
+
+        # Block signals temporarily to prevent infinite feedback loops
+        self.samplerateSpinBox.blockSignals(True)
+        self.samplerateSpinBox.setValue(actual_rate_scaled)
+        self.samplerateSpinBox.blockSignals(False)
+
         return
 
     def update_pulser(self):
@@ -396,17 +411,22 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
         return 0
 
-    def update_rf_filter(self):
-        """Read RF noise filter settings from GUI and update filter state.
+    def update_rf_filter(self) -> None:
+        """Update the waveform filter configuration from the GUI.
 
-        Reads filter type, cutoff frequencies, and filter order from GUI.
-        Reads the sample rate from the system to scale the filter.
+        Reads RF filtere settings from GUI and uses the sample rate from
+        the system to scale the filter.
         """
-        self.rf_filter.sample_rate = self.sampling.sample_rate
-        self.rf_filter.type = self.filterComboBox.currentText()
-        self.rf_filter.f_min = self.fminSpinBox.value()*FREQUENCYSCALE
-        self.rf_filter.f_max = self.fmaxSpinBox.value()*FREQUENCYSCALE
-        self.rf_filter.order = self.filterOrderSpinBox.value()
+
+        rf_filter = self.rf_filter
+
+        rf_filter.sample_rate = self.sampling.sample_rate
+        rf_filter.filter_type = self.filterComboBox.currentData()
+        rf_filter.f_min = self.fminSpinBox.value() * FREQUENCYSCALE
+        rf_filter.f_max = self.fmaxSpinBox.value() * FREQUENCYSCALE
+        rf_filter.order = self.filterOrderSpinBox.value()
+
+        rf_filter.validate()
         return
 
     def control_acquisition(self):
@@ -851,6 +871,17 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         Structures multi-channel elements into iterable formats and applies
         the initial stylesheet coloring.
         """
+
+        # Configure Comboboxes for StrEnum
+        self.filterComboBox.addItem("No filter", us.FilterType.BYPASS)
+        self.filterComboBox.addItem("AC coupling", us.FilterType.AC)
+        self.filterComboBox.addItem("RF filter", us.FilterType.RF)
+
+        self.triggerModeComboBox.addItem("Rising",
+                                         ps.TriggerDirection.RISING)
+        self.triggerModeComboBox.addItem("Falling",
+                                         ps.TriggerDirection.FALLING)
+
         # Display scales
         for spin_box in (self.zoomStartSpinBox, self.zoomEndSpinBox,
                          self.zoomFminSpinBox, self.zoomFmaxSpinBox,
