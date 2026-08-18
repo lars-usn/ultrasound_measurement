@@ -96,7 +96,7 @@
      <string notr="true"/>
     </property>
     <property name="currentIndex">
-     <number>0</number>
+     <number>2</number>
     </property>
     <widget class="QWidget" name="acquisitionTab">
      <property name="enabled">
@@ -763,21 +763,11 @@
        <item row="2" column="1">
         <widget class="QComboBox" name="triggerModeComboBox">
          <property name="currentText">
-          <string>Rising</string>
+          <string/>
          </property>
          <property name="currentIndex">
-          <number>0</number>
+          <number>-1</number>
          </property>
-         <item>
-          <property name="text">
-           <string>Rising</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>Falling</string>
-          </property>
-         </item>
         </widget>
        </item>
        <item row="4" column="1">
@@ -1361,26 +1351,11 @@
        <item row="13" column="2" colspan="2">
         <widget class="QComboBox" name="filterComboBox">
          <property name="currentText">
-          <string>No filter</string>
+          <string/>
          </property>
          <property name="currentIndex">
-          <number>0</number>
+          <number>-1</number>
          </property>
-         <item>
-          <property name="text">
-           <string>No filter</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>AC coupling</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>Bandpass</string>
-          </property>
-         </item>
         </widget>
        </item>
        <item row="13" column="1">
