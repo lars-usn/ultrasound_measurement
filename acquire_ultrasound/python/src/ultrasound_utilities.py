@@ -266,6 +266,34 @@ class Waveform:
         return wfm
 
 
+class WindowType(StrEnum):
+    """Supported waveform filter types."""
+    RECT = "Rectangular"
+    HANN = "Hann"
+    HAMMING = 'Hanning'
+    TUKEY = 'Tukey'
+
+
+@dataclass(frozen=True)
+class ActionItem:
+    label: str
+    func_name: str
+
+
+class Windows:
+    RECT = ActionItem("Rectangular", 'rectangular')
+    HANN = ActionItem("Hann", "hann")
+    HAMMING = ActionItem('Hamming', 'hamming')
+    TUKEY = ActionItem('Tukey', 'tukey')
+
+    @classmethod
+    def get_all(cls) -> list[ActionItem]:
+        return [
+            value for value in cls.__dict__.values()
+            if isinstance(value, ActionItem)
+        ]
+
+
 @dataclass
 class Pulse:
     """Create standardised theoretical ultrasound pulses.

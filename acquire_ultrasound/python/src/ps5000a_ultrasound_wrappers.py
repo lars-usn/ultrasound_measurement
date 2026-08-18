@@ -33,6 +33,12 @@ DAC_SAMPLERATE = 500e6   # [Samples/s] Fixed, see Programmer's guide
 CHANNEL_NAMES = ("A", "B")
 
 
+class Coupling(StrEnum):
+    """Oscilloscope coupling."""
+    DC = "DC"
+    AC = "AC"
+
+
 @dataclass
 class Channel:
     """Oscilloscope vertical (voltage) channel settings and status.
@@ -49,7 +55,7 @@ class Channel:
         Maximum ADC value used for scaling to voltage.
     offset : float
         Offset voltage.
-    coupling : str
+    coupling : Coupling
         Channel coupling, "DC" or "AC".
     bwl : bool
         Bandwidth limiter status (not available on PS2000 series).
@@ -67,7 +73,7 @@ class Channel:
     v_range: float = 1.0
     adc_max: int = 32767
     offset: float = 0.0
-    coupling: Literal["DC", "AC"] = "DC"
+    coupling: Coupling = Coupling.DC
     bwl: bool = False
 
     @property
@@ -150,13 +156,21 @@ class TriggerDirection(StrEnum):
     FALLING = "Falling"
 
 
+class TriggerSource(StrEnum):
+    """Supported trigger edge directions."""
+    A = "Ch A"
+    B = "Ch B"
+    EXT = 'EXT'
+    INTERNAL = 'Internal'
+
+
 @dataclass
 class Trigger:
     """Oscilloscope trigger settings and status.
 
     Attributes
     ----------
-    source : str
+    source : TriggerSource
         Trigger source (e.g. "A", "B", "EXT", "Internal").
     level : float
         Trigger level in volts.
@@ -169,7 +183,7 @@ class Trigger:
     adc_max : int
         Instrument ADC maximum value used for scaling.
     """
-    source: str = "A"
+    source: TriggerSource = TriggerSource.A
     level: float = 0.5
     direction: TriggerDirection = TriggerDirection.RISING
     delay: float = 0.0

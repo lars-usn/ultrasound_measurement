@@ -872,15 +872,26 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         the initial stylesheet coloring.
         """
 
-        # Configure Comboboxes for StrEnum
-        self.filterComboBox.addItem("No filter", us.FilterType.BYPASS)
-        self.filterComboBox.addItem("AC coupling", us.FilterType.AC)
-        self.filterComboBox.addItem("RF filter", us.FilterType.RF)
+        # Configure Comboboxes
+        for member in us.Windows().get_all():
+            self.pulseEnvelopeComboBox.addItem(member.label, member)
 
-        self.triggerModeComboBox.addItem("Rising",
-                                         ps.TriggerDirection.RISING)
-        self.triggerModeComboBox.addItem("Falling",
-                                         ps.TriggerDirection.FALLING)
+        for member in us.FilterType:
+            self.filterComboBox.addItem(member.value, member.name)
+
+        for member in ps.Coupling:
+            for combobox in [self.couplingAComboBox, self.couplingBComboBox]:
+                combobox.addItem(member.value, member.name)
+
+        for member in ps.TriggerDirection:
+            self.triggerModeComboBox.addItem(member.value, member.name)
+
+        for member in ps.TriggerSource:
+            self.triggerSourceComboBox.addItem(member.value, member.name)
+
+        for combobox in [self.bwlAComboBox, self.bwlBComboBox]:
+            combobox.addItem("None", False)
+            combobox.addItem("20 MHz", True)
 
         # Display scales
         for spin_box in (self.zoomStartSpinBox, self.zoomEndSpinBox,
