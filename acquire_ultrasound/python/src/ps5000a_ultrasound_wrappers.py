@@ -19,7 +19,7 @@ import time
 import ctypes
 import numpy as np
 from bisect import bisect_left
-from typing import ClassVar, Literal
+from typing import ClassVar
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -58,7 +58,7 @@ class Channel:
     coupling : Coupling
         Channel coupling, "DC" or "AC".
     bwl : bool
-        Bandwidth limiter status (not available on PS2000 series).
+        Bandwidth limiter activated
     """
 
     VALID_RANGES: ClassVar[tuple[float, ...]] = (
@@ -121,8 +121,8 @@ class Horizontal:
         if self.dt <= 0:
             raise ValueError("dt must be positive")
 
-        if not 0.0 <= self.trigger_position <= 100.0:
-            raise ValueError("trigger_position must be between 0 and 100%")
+        # if not 0.0 <= self.trigger_position <= 100.0:
+        #     raise ValueError("trigger_position must be between 0 and 100%")
 
     @property
     def sample_rate(self) -> float:
@@ -132,6 +132,7 @@ class Horizontal:
     @property
     def n_pretrigger(self) -> int:
         """Number of samples before trigger."""
+        self.trigger_position = np.clip(self.trigger_position, 0.0, 100.0)
         return round(self.n_samples * self.trigger_position / 100.0)
 
     @property

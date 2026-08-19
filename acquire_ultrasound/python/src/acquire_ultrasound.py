@@ -53,6 +53,7 @@ COLOR = {'warning': ('#78281F', '#FADBD8'),
          'zoom': ('#B0E0E6', '#E0FFFF'),
          }
 
+N_CHANNELS = 2
 TIMESCALE = 1E-6      # Display scales for time and frequency
 FREQUENCYSCALE = 1E6
 V_MAX = 20           # Absolute maximum voltage scale
@@ -104,7 +105,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         self.dso = ps.Picoscope5000A()
         self.display = Display()
         self.sampling = ps.Horizontal()
-        self.channel = [ps.Channel(i) for i in range(2)]
+        self.channel = [ps.Channel(k) for k in range(N_CHANNELS)]
         self.trigger = ps.Trigger()
 
         # Waveform processing
