@@ -274,14 +274,14 @@ class ActionItem:
     par: float | None = None
 
 
-class Windows(Enum):
+class Window(Enum):
     RECT = ActionItem("Rectangular", "rectangular")
     HANN = ActionItem("Hann", "hann")
     HAMMING = ActionItem("Hamming", "hamming")
     TUKEY = ActionItem("Tukey", "tukey", 0.25)
 
 
-class Carriers(Enum):
+class Carrier(Enum):
     COS = ActionItem("Cosine", "cos")
     SQUARE = ActionItem("Square", "square", 0.5)
     TRIANGLE = ActionItem("Triangular", "sawtooth", 0.5)
@@ -289,17 +289,14 @@ class Carriers(Enum):
 
     def evaluate(self, phase: np.ndarray) -> np.ndarray:
         match self:
-            case Carriers.COS:
+            case Carrier.COS:
                 return np.cos(phase)
 
-            case Carriers.SQUARE:
+            case Carrier.SQUARE:
                 return 0.5 * signal.square(phase, duty=self.value.par)
 
-            case Carriers.TRIANGLE | Carriers.SAWTOOTH:
-                return 0.5 * signal.sawtooth(
-                    phase,
-                    width=self.value.par,
-                )
+            case Carrier.TRIANGLE | Carrier.SAWTOOTH:
+                return 0.5 * signal.sawtooth(phase, width=self.value.par)
 
         raise ValueError(f"Unsupported carrier: {self}")
 
@@ -337,8 +334,8 @@ class Pulse:
         Power/activation status ("ON"/"OFF").
     """
 
-    shape: Carriers = Carriers.COS
-    envelope: Windows = Windows.RECT
+    shape: Carrier = Carrier.COS
+    envelope: Window = Window.RECT
     n_cycles: float = 2.0
     f0: float = 2.0e6
     a: float = 1.0
@@ -386,10 +383,12 @@ class Pulse:
         """
         phase_arg = (2 * pi * self.f0 * self.t + radians(self.phase))
 
-        if self.envelope.par is None:
-            window_spec = self.envelope.func_name
+        func = self.envelope.value.func_name
+        par = self.envelope.value.par
+        if par is None:
+            window_spec = func
         else:
-            window_spec = (self.envelope.func_name, self.envelope.par)
+            window_spec = (func, par)
         win = signal.get_window(window_spec, self.n_samples)
 
         y_signal = self.a * win * self.shape.evaluate(phase_arg)

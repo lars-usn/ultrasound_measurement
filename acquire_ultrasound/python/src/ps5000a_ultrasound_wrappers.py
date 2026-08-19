@@ -150,28 +150,54 @@ class Horizontal:
         return (self.n_posttrigger - 1) * self.dt
 
 
+# --- Trigger class definitions ---------------------------------------------
 class TriggerDirection(StrEnum):
-    """Supported trigger edge directions."""
     RISING = "Rising"
     FALLING = "Falling"
 
+    @property
+    def mode(self) -> int:
+        return TRIGGER_MODES[self]
+
+
+TRIGGER_MODES = {
+    TriggerDirection.RISING: 2,
+    TriggerDirection.FALLING: 3,
+}
+
 
 class TriggerSource(StrEnum):
-    """Supported trigger edge directions."""
+    """Supported trigger sources."""
+
     A = "Ch A"
     B = "Ch B"
-    EXT = 'EXT'
-    INTERNAL = 'Internal'
+    EXT = "EXT"
+    INTERNAL = "Internal"
+
+    @property
+    def channel_no(self) -> int | None:
+        return {TriggerSource.A: 0,
+                TriggerSource.B: 1}.get(self)
+
+    @property
+    def picoscope_name(self) -> str:
+        return {TriggerSource.A: "PS5000A_CHANNEL_A",
+                TriggerSource.B: "PS5000A_CHANNEL_B",
+                TriggerSource.EXT: "PS5000A_EXTERNAL"}[self]
+
+    @property
+    def picoscope_source(self) -> int:
+        return picoscope.PS5000A_CHANNEL[self.picoscope_name]
 
 
 @dataclass
 class Trigger:
     """Oscilloscope trigger settings and status.
-
+ 
     Attributes
     ----------
     source : TriggerSource
-        Trigger source (e.g. "A", "B", "EXT", "Internal").
+        Trigger source.
     level : float
         Trigger level in volts.
     direction : TriggerDirection
@@ -201,7 +227,7 @@ class Trigger:
     @property
     def enabled(self) -> bool:
         """Whether a hardware trigger is active."""
-        return self.source.casefold().startswith("int") is False
+        return self.source is not TriggerSource.INTERNAL
 
 
 class Picoscope5000A:
@@ -250,9 +276,6 @@ class Picoscope5000A:
     POWER_ERRORS = {
         picoscope.PICO_STATUS["PICO_POWER_SUPPLY_NOT_CONNECTED"],
         picoscope.PICO_STATUS["PICO_USB3_0_DEVICE_NON_USB3_0_PORT"]}
-
-    TRIGGER_MODES = {TriggerDirection.RISING: 2,
-                     TriggerDirection.FALLING: 3}
 
     def __init__(self) -> None:
         self.handle = ctypes.c_int16()
@@ -400,26 +423,24 @@ class Picoscope5000A:
                             )
         return
 
-    def _trigger_source_and_threshold(self,
-                                      trigger: Trigger,
-                                      channels: list[Channel],
-                                      ) -> tuple[int, int]:
-        """Find trigger source and ADC threshold."""
-        if trigger.source == "EXT":
-            source = picoscope.PS5000A_CHANNEL["PS5000A_EXTERNAL"]
-            relative_level = np.clip(trigger.level / 5.0, -1.0, 1.0)
-            threshold = int(relative_level * trigger.adc_max)
-            return source, threshold
+    def _trigger_threshold(self,
+                           trigger: Trigger,
+                           channels: list[Channel]) -> int:
+        """Return trigger ADC threshold."""
 
-        if trigger.source in {"A", "B"}:
-            ch_no = channel_name_to_no(trigger.source)
-            source = picoscope.PS5000A_CHANNEL[
-                f"PS5000A_CHANNEL_{trigger.source}"]
-            relative_level = np.clip(trigger.level / channels[ch_no].v_max,
-                                     -1.0, 1.0)
+        if trigger.source is TriggerSource.EXT:
+            v_max = 5.0
+            adc_max = trigger.adc_max
 
-            threshold = int(relative_level * channels[ch_no].adc_max)
-            return source, threshold
+        elif trigger.source.channel_no is not None:
+            channel = channels[trigger.source.channel_no]
+            v_max = channel.v_max
+            adc_max = channel.adc_max
+
+        else:
+            raise ValueError(f"Unsupported trigger source: {trigger.source}")
+
+        return int(np.clip(trigger.level / v_max, -1.0, 1.0) * adc_max)
 
     def set_trigger(self,
                     trigger: Trigger,
@@ -437,9 +458,10 @@ class Picoscope5000A:
             Horizontal acquisition settings.
         """
         enabled = int(trigger.enabled)
-        source, threshold = self._trigger_source_and_threshold(trigger,
-                                                               channels)
-        mode = self.TRIGGER_MODES[trigger.direction]
+        source = trigger.source.picoscope_source
+        threshold = self._trigger_threshold(trigger, channels)
+        mode = trigger.direction.mode
+
         delay_points = int(trigger.delay / sampling.dt)
         autotrigger_ms = ctypes.c_int16(int(trigger.autodelay * 1e3))
         autotrigger_us = ctypes.c_uint64(int(trigger.autodelay * 1e6))

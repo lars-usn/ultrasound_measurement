@@ -296,8 +296,10 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
         """
         # Read settings from GUI
-        self.trigger.source = self.triggerSourceComboBox.currentText()
         self.trigger.direction = self.triggerModeComboBox.currentData()
+        print(repr(self.trigger.direction))
+        self.trigger.source = self.triggerSourceComboBox.currentData()
+        print(repr(self.trigger.source))
         self.trigger.level = self.triggerLevelSpinBox.value()
         self.trigger.delay = self.triggerDelaySpinBox.value()*TIMESCALE
         self.trigger.autodelay = self.triggerAutoDelaySpinBox.value()*1e-3
@@ -873,8 +875,11 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         """
 
         # Configure Comboboxes
-        for member in us.Windows().get_all():
-            self.pulseEnvelopeComboBox.addItem(member.label, member)
+        for member in us.Window:
+            self.pulseEnvelopeComboBox.addItem(member.value.label, member)
+
+        for member in us.Carrier:
+            self.pulseShapeComboBox.addItem(member.value.label, member)
 
         for member in us.FilterType:
             self.filterComboBox.addItem(member.value, member.name)
@@ -884,10 +889,10 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
                 combobox.addItem(member.value, member.name)
 
         for member in ps.TriggerDirection:
-            self.triggerModeComboBox.addItem(member.value, member.name)
+            self.triggerModeComboBox.addItem(member.value, member)
 
         for member in ps.TriggerSource:
-            self.triggerSourceComboBox.addItem(member.value, member.name)
+            self.triggerSourceComboBox.addItem(member.value, member)
 
         for combobox in [self.bwlAComboBox, self.bwlBComboBox]:
             combobox.addItem("None", False)
