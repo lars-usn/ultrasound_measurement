@@ -168,7 +168,6 @@ TRIGGER_MODES = {
 
 class TriggerSource(StrEnum):
     """Supported trigger sources."""
-
     A = "Ch A"
     B = "Ch B"
     EXT = "EXT"
@@ -180,20 +179,23 @@ class TriggerSource(StrEnum):
                 TriggerSource.B: 1}.get(self)
 
     @property
-    def picoscope_name(self) -> str:
+    def picoscope_name(self) -> str | None:
         return {TriggerSource.A: "PS5000A_CHANNEL_A",
                 TriggerSource.B: "PS5000A_CHANNEL_B",
-                TriggerSource.EXT: "PS5000A_EXTERNAL"}[self]
+                TriggerSource.EXT: "PS5000A_EXTERNAL"}.get(self)
 
     @property
-    def picoscope_source(self) -> int:
-        return picoscope.PS5000A_CHANNEL[self.picoscope_name]
+    def picoscope_source(self) -> int | None:
+        name = self.picoscope_name
+        if name is None:
+            return None
+        return picoscope.PS5000A_CHANNEL[name]
 
 
 @dataclass
 class Trigger:
     """Oscilloscope trigger settings and status.
- 
+
     Attributes
     ----------
     source : TriggerSource
