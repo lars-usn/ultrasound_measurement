@@ -10,6 +10,7 @@ Modified July 2026
 """
 
 from dataclasses import dataclass, field
+from enum import Enum
 from math import pi, radians, log10, floor, frexp, isclose
 import numpy as np
 from scipy import signal
@@ -266,32 +267,41 @@ class Waveform:
         return wfm
 
 
-class WindowType(StrEnum):
-    """Supported waveform filter types."""
-    RECT = "Rectangular"
-    HANN = "Hann"
-    HAMMING = 'Hanning'
-    TUKEY = 'Tukey'
-
-
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ActionItem:
     label: str
     func_name: str
+    par: float | None = None
 
 
-class Windows:
-    RECT = ActionItem("Rectangular", 'rectangular')
+class Windows(Enum):
+    RECT = ActionItem("Rectangular", "rectangular")
     HANN = ActionItem("Hann", "hann")
-    HAMMING = ActionItem('Hamming', 'hamming')
-    TUKEY = ActionItem('Tukey', 'tukey')
+    HAMMING = ActionItem("Hamming", "hamming")
+    TUKEY = ActionItem("Tukey", "tukey", 0.25)
 
-    @classmethod
-    def get_all(cls) -> list[ActionItem]:
-        return [
-            value for value in cls.__dict__.values()
-            if isinstance(value, ActionItem)
-        ]
+
+class Carriers(Enum):
+    COS = ActionItem("Cosine", "cos")
+    SQUARE = ActionItem("Square", "square", 0.5)
+    TRIANGLE = ActionItem("Triangular", "sawtooth", 0.5)
+    SAWTOOTH = ActionItem("Sawtooth", "sawtooth", 1.0)
+
+    def evaluate(self, phase: np.ndarray) -> np.ndarray:
+        match self:
+            case Carriers.COS:
+                return np.cos(phase)
+
+            case Carriers.SQUARE:
+                return 0.5 * signal.square(phase, duty=self.value.par)
+
+            case Carriers.TRIANGLE | Carriers.SAWTOOTH:
+                return 0.5 * signal.sawtooth(
+                    phase,
+                    width=self.value.par,
+                )
+
+        raise ValueError(f"Unsupported carrier: {self}")
 
 
 @dataclass
@@ -303,10 +313,10 @@ class Pulse:
 
     Attributes
     ----------
-    shape : str
-        Carrier wave shape: "sine", "square", "triangle", "sawtooth".
-    envelope : str
-        Pulse envelope: "rectangular", "hann", "hamming", "triangle", "tukey".
+    shape : Carriers
+        Carrier wave shape: "cosine", "square", "triangle", "sawtooth".
+    envelope : Windows
+        Pulse envelope, Rectangular, Hann, Tukey, ...
     n_cycles : float
         Pulse length as number of cycles.
     f0 : float
@@ -327,8 +337,8 @@ class Pulse:
         Power/activation status ("ON"/"OFF").
     """
 
-    shape: str = "sine"
-    envelope: str = "rectangular"
+    shape: Carriers = Carriers.COS
+    envelope: Windows = Windows.RECT
     n_cycles: float = 2.0
     f0: float = 2.0e6
     a: float = 1.0
@@ -374,35 +384,17 @@ class Pulse:
         np.ndarray
             1D array of float representing the generated pulse waveform.
         """
-        # Select the appropriate window/envelope
-        windows = {
-            "rec": lambda n: signal.windows.boxcar(n),
-            "han": lambda n: signal.windows.hann(n),
-            "ham": lambda n: signal.windows.hamming(n),
-            "tri": lambda n: signal.windows.triang(n),
-            "tuk": lambda n: signal.windows.tukey(n, self.alpha),
-        }
+        phase_arg = (2 * pi * self.f0 * self.t + radians(self.phase))
 
-        win = windows.get(
-            self.envelope[:3].lower(),
-            windows["rec"]
-        )(self.n_samples)
+        if self.envelope.par is None:
+            window_spec = self.envelope.func_name
+        else:
+            window_spec = (self.envelope.func_name, self.envelope.par)
+        win = signal.get_window(window_spec, self.n_samples)
 
-        phase_arg = 2 * pi * self.f0 * self.t + radians(self.phase)
+        y_signal = self.a * win * self.shape.evaluate(phase_arg)
 
-        # Select the carrier wave shape
-        match self.shape.lower()[0:3]:
-            case "squ":
-                s = 0.5 * signal.square(phase_arg, duty=0.5)
-            case "tri":
-                s = 0.5 * signal.sawtooth(phase_arg, width=0.5)
-            case "saw":
-                s = 0.5 * signal.sawtooth(phase_arg, width=1.0)
-            case _:
-                s = np.cos(phase_arg)
-
-        y_signal = self.a * win * s
-        if len(y_signal) > 0:
+        if y_signal.size:
             y_signal[-1] = 0.0
 
         return y_signal
