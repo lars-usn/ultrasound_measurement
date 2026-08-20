@@ -88,16 +88,15 @@ class Waveform:
 
     def filtered(self, wave_filter):
         """Return filtered copy of waveform."""
-        print(wave_filter == FilterType.BYPASS)
-        match wave_filter:
-            case FilterType.BYPASS:
+        match wave_filter.mode:
+            case WaveformFilter.Mode.NONE:
                 y_filtered = self.y.copy()
 
-            case FilterType.AC:
+            case WaveformFilter.Mode.AC:
                 y_filtered = self.y - self.y.mean(axis=0)
 
-            case FilterType.RF:
-                b, a = wave_filter.coefficients()
+            case WaveformFilter.Mode.BANDPASS:
+                b, a = wave_filter.coefficients
                 y_filtered = signal.filtfilt(b, a, self.y, axis=0)
 
             case _:
@@ -486,18 +485,17 @@ class Pulse:
         return 0
 
 
-class FilterType(Enum):
-    """Supported waveform filter types."""
-    BYPASS = "No"
-    AC = "AC"
-    RF = "RF filter"
-
-
 @dataclass(slots=True)
 class WaveformFilter:
     """Digital filter definition for waveform processing."""
 
-    filter_type: FilterType = FilterType.BYPASS
+    class Mode(Enum):
+        """Supported waveform filter types."""
+        NONE = "No"
+        AC = "AC"
+        BANDPASS = "Bandpass filter"
+
+    mode: Mode = Mode.NONE
     f_min: float = 100e3
     f_max: float = 10e6
     order: int = 2
@@ -520,15 +518,17 @@ class WaveformFilter:
         if self.f_max <= self.f_min:
             raise ValueError("f_max must be greater than f_min")
 
+    @property
     def normalized_cutoffs(self) -> np.ndarray:
         """Return cutoff frequencies normalized to Nyquist."""
         return np.array([self.f_min, self.f_max]) / self.nyquist
 
+    @property
     def coefficients(self) -> tuple[np.ndarray, np.ndarray]:
         """Return Butterworth filter coefficients."""
 
         self.validate()
-        fn = self.normalized_cutoffs()
+        fn = self.normalized_cutoffs
         if fn[0] <= 0:
             return signal.butter(self.order, fn[1],
                                  btype="lowpass", output="ba")
