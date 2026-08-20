@@ -15,6 +15,8 @@ Lars Hoff, USN, Sep 2022
     Modified June 2024 to better follow PEP-8 and numpy docstring style guides.
     Rearranged and cleaned, July 2026
 """
+from __future__ import annotations
+
 import time
 import ctypes
 import numpy as np
@@ -22,6 +24,7 @@ from bisect import bisect_left
 from typing import ClassVar
 from dataclasses import dataclass
 from enum import StrEnum
+
 
 from picosdk.ps5000a import ps5000a as picoscope
 from picosdk.functions import adc2mV, assert_pico_ok
@@ -31,12 +34,6 @@ from ultrasound_utilities import Pulse
 
 DAC_SAMPLERATE = 500e6   # [Samples/s] Fixed, see Programmer's guide
 CHANNEL_NAMES = ("A", "B")
-
-
-class Coupling(StrEnum):
-    """Oscilloscope coupling."""
-    DC = "DC"
-    AC = "AC"
 
 
 @dataclass
@@ -61,6 +58,14 @@ class Channel:
         Bandwidth limiter activated
     """
 
+    class Coupling(StrEnum):
+        DC = "DC"
+        AC = "AC"
+
+        @property
+        def code(self) -> int:
+            return int(picoscope.PS5000A_COUPLING[f"PS5000A_{self.upper()}"])
+
     VALID_RANGES: ClassVar[tuple[float, ...]] = (
         0.01, 0.02, 0.05,
         0.1, 0.2, 0.5,
@@ -73,7 +78,7 @@ class Channel:
     v_range: float = 1.0
     adc_max: int = 32767
     offset: float = 0.0
-    coupling: Coupling = Coupling.DC
+    coupling: "Channel.Coupling" = Coupling.DC
     bwl: bool = False
 
     @property
@@ -86,15 +91,14 @@ class Channel:
         """Smallest supported range >= requested range."""
         idx = bisect_left(self.VALID_RANGES, self.v_range)
 
-        if idx > len(self.VALID_RANGES):
+        if idx >= len(self.VALID_RANGES):
             return self.VALID_RANGES[-1]
 
         return self.VALID_RANGES[idx]
 
     @property
     def coupling_code(self) -> int:
-        return int(
-            picoscope.PS5000A_COUPLING[f"PS5000A_{self.coupling.upper()}"])
+        return self.coupling.code
 
 
 @dataclass
@@ -120,9 +124,6 @@ class Horizontal:
     def __post_init__(self) -> None:
         if self.dt <= 0:
             raise ValueError("dt must be positive")
-
-        # if not 0.0 <= self.trigger_position <= 100.0:
-        #     raise ValueError("trigger_position must be between 0 and 100%")
 
     @property
     def sample_rate(self) -> float:
@@ -151,86 +152,76 @@ class Horizontal:
         return (self.n_posttrigger - 1) * self.dt
 
 
-# --- Trigger class definitions ---------------------------------------------
-class TriggerDirection(StrEnum):
-    RISING = "Rising"
-    FALLING = "Falling"
-
-    @property
-    def mode(self) -> int:
-        return TRIGGER_MODES[self]
-
-
-TRIGGER_MODES = {
-    TriggerDirection.RISING: 2,
-    TriggerDirection.FALLING: 3,
-}
-
-
-class TriggerSource(StrEnum):
-    """Supported trigger sources."""
-    A = "Ch A"
-    B = "Ch B"
-    EXT = "EXT"
-    INTERNAL = "Internal"
-
-    @property
-    def channel_no(self) -> int | None:
-        return {TriggerSource.A: 0,
-                TriggerSource.B: 1}.get(self)
-
-    @property
-    def picoscope_name(self) -> str | None:
-        return {TriggerSource.A: "PS5000A_CHANNEL_A",
-                TriggerSource.B: "PS5000A_CHANNEL_B",
-                TriggerSource.EXT: "PS5000A_EXTERNAL"}.get(self)
-
-    @property
-    def picoscope_source(self) -> int | None:
-        name = self.picoscope_name
-        if name is None:
-            return None
-        return picoscope.PS5000A_CHANNEL[name]
-
-
 @dataclass
 class Trigger:
     """Oscilloscope trigger settings and status.
 
     Attributes
     ----------
-    source : TriggerSource
+    source : Trigger.Source
         Trigger source.
     level : float
         Trigger level in volts.
-    direction : TriggerDirection
+    direction : Trigger.Direction
         Trigger edge direction.
     delay : float
         Trigger delay in seconds.
     autodelay : float
         Auto-trigger timeout in seconds.
-    adc_max : int
-        Instrument ADC maximum value used for scaling.
     """
-    source: TriggerSource = TriggerSource.A
+
+    class Direction(StrEnum):
+        RISING = "Rising"
+        FALLING = "Falling"
+
+        @property
+        def code(self) -> int:
+            return {self.RISING: 2,
+                    self.FALLING: 3}[self]
+
+    class Source(StrEnum):
+        """Supported trigger sources."""
+        A = "Ch A"
+        B = "Ch B"
+        EXT = "EXT"
+        INTERNAL = "Internal"
+
+        @property
+        def channel_no(self) -> int | None:
+            if self is Trigger.Source.A:
+                return 0
+            if self is Trigger.Source.B:
+                return 1
+            return None
+
+        @property
+        def picoscope_name(self) -> str | None:
+            return {Trigger.Source.A: "PS5000A_CHANNEL_A",
+                    Trigger.Source.B: "PS5000A_CHANNEL_B",
+                    Trigger.Source.EXT: "PS5000A_EXTERNAL"}.get(self)
+
+        @property
+        def picoscope_source(self) -> int | None:
+            name = self.picoscope_name
+            if name is None:
+                return None
+            return picoscope.PS5000A_CHANNEL[name]
+
+    source: Trigger.Source = Source.A
     level: float = 0.5
-    direction: TriggerDirection = TriggerDirection.RISING
+    direction: Trigger.Direction = Direction.RISING
     delay: float = 0.0
     autodelay: float = 0.01
-    adc_max: int = 0
 
     def __post_init__(self) -> None:
         """Validate settings."""
         if self.autodelay < 0:
             raise ValueError("autodelay must be non-negative")
 
-        if self.adc_max < 0:
-            raise ValueError("adc_max must be non-negative")
-
     @property
     def enabled(self) -> bool:
         """Whether a hardware trigger is active."""
-        return self.source is not TriggerSource.INTERNAL
+        return self.source is not Trigger.Source.INTERNAL
 
 
 class Picoscope5000A:
@@ -255,7 +246,7 @@ class Picoscope5000A:
         Flag indicating whether the instrument acquisition has finished.
     max_samples : ctypes.c_int32
         Maximum number of samples to acquire.
-    max_adc : ctypes.c_int16
+    adc_max : ctypes.c_int16
         Maximum value for the instrument ADC.
     overflow : ctypes.c_int16
         Flag indicating if an overflow was detected in the input data.
@@ -290,7 +281,7 @@ class Picoscope5000A:
 
         self.acquisition_ready = ctypes.c_int16()
         self.max_samples = ctypes.c_int32()
-        self.max_adc = ctypes.c_int16()
+        self.adc_max = ctypes.c_int16()
         self.overflow = ctypes.c_int16()
 
         self.channel = "A"
@@ -321,7 +312,7 @@ class Picoscope5000A:
         except PicoSDKCtypesError:
             self._handle_power_state(status)
 
-        self._read_max_adc()
+        self._read_adc_max()
         self.connected = True
 
         return
@@ -337,12 +328,12 @@ class Picoscope5000A:
                             )
         return
 
-    def _read_max_adc(self) -> None:
+    def _read_adc_max(self) -> None:
         """Read ADC scaling information from the instrument."""
         self._set_and_check("maximum_value",
                             picoscope.ps5000aMaximumValue(
                                 self.handle,
-                                ctypes.byref(self.max_adc))
+                                ctypes.byref(self.adc_max))
                             )
         return
 
@@ -431,19 +422,20 @@ class Picoscope5000A:
                            channels: list[Channel]) -> int:
         """Return trigger ADC threshold."""
 
-        if trigger.source is TriggerSource.EXT:
+        if trigger.source is Trigger.Source.EXT:
+            adc_max = channels[0].adc_max
             v_max = 5.0
-            adc_max = trigger.adc_max
 
-        elif trigger.source.channel_no is not None:
-            channel = channels[trigger.source.channel_no]
-            v_max = channel.v_max
+        elif (channel_no := trigger.source.channel_no) is not None:
+            channel = channels[channel_no]
             adc_max = channel.adc_max
+            v_max = channel.v_max
 
         else:
             raise ValueError(f"Unsupported trigger source: {trigger.source}")
 
-        return int(np.clip(trigger.level / v_max, -1.0, 1.0) * adc_max)
+        normalized = np.clip(trigger.level / v_max, -1.0, 1.0)
+        return int(normalized * adc_max)
 
     def set_trigger(self,
                     trigger: Trigger,
@@ -463,7 +455,7 @@ class Picoscope5000A:
         enabled = int(trigger.enabled)
         source = trigger.source.picoscope_source
         threshold = self._trigger_threshold(trigger, channels)
-        mode = trigger.direction.mode
+        mode = trigger.direction.code
 
         delay_points = int(trigger.delay / sampling.dt)
         autotrigger_ms = ctypes.c_int16(int(trigger.autodelay * 1e3))
@@ -623,7 +615,7 @@ class Picoscope5000A:
             adc_range = self.find_adc_range(channel.v_max)
             voltages_mv[:, channel.no] = adc2mV(self.buffer[channel.no],
                                                 adc_range,
-                                                self.max_adc)
+                                                self.adc_max)
 
         return voltages_mv * 1e-3
 

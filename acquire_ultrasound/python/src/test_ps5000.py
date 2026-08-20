@@ -1,5 +1,5 @@
 """
-Test configuration and acquisition of Picosciope oscilloscope using classes 
+Test configuration and acquisition of Picosciope oscilloscope using classes
 and functions from ps5000a_ultrasound_wrappers.py
 Bare minimum - Change values to test
 Reports results of internal class methods
@@ -8,6 +8,8 @@ Created on Wed Aug 19 20:24:21 2026
 
 @author: lars-hoff
 """
+import matplotlib.pyplot as plt
+
 import ultrasound_utilities as us         # USN ultrasound lab specific
 import ps5000a_ultrasound_wrappers as ps  # Interface to Pico c-library
 
@@ -25,11 +27,9 @@ pulse.dt = 1 / ps.DAC_SAMPLERATE
 # --- Horizontal ---------------------------------------------------
 sampling = ps.Horizontal()
 
-sampling.timebase = 3
-sampling.n_samples = 20000
-sampling.dt = 0.8e-9
+requested_sample_rate = 100e6
+sampling.n_samples = 10000
 sampling.trigger_position = 10
-
 
 print('')
 print('Horizontal')
@@ -42,46 +42,43 @@ print('')
 
 # --- Vertical -----------------------------------------------------
 N_CHANNELS = 2
-channel = [ps.Channel(k) for k in range(N_CHANNELS)]
+channels = [ps.Channel(k) for k in range(N_CHANNELS)]
 
 no = 0
-ch = channel[no]
-ch.no = no
-ch.enabled = True
-ch.v_range = 1.5
-ch.adc_max = 32767
-ch.offset = 0.0
-ch.coupling = ps.Coupling.DC
-ch.bwl: bool = False
+channel = channels[no]
+channel.no = no
+channel.enabled = True
+channel.v_range = 0.1
+channel.offset = 0.0
+channel.coupling = ps.Channel.Coupling.DC
+channel.bwl: bool = False
 
 no = 1
-ch = channel[no]
-ch.no = no
-ch.enabled = True
-ch.v_range = 3
-ch.adc_max = 32767
-ch.offset = 0.0
-ch.coupling = ps.Coupling.DC
-ch.bwl: bool = False
+channel = channels[no]
+channel.no = no
+channel.enabled = True
+channel.v_range = 1
+channel.offset = 0.0
+channel.coupling = ps.Channel.Coupling.DC
+channel.bwl: bool = True
 
 print('')
 print('Vertical settings')
-for ch in channel:
-    print(f'Channel no.: {ch.no}, ', end='')
-    print(f'name: {ch.name}, ', end='')
-    print(f'v_max: {ch.v_max}, ', end='')
-    print(f'coupling_code: {ch.coupling_code}')
+for channel in channels:
+    print(f'Channel no.: {channel.no}, ', end='')
+    print(f'name: {channel.name}, ', end='')
+    print(f'v_max: {channel.v_max}, ', end='')
+    print(f'coupling_code: {channel.coupling_code}')
 
 
 # --- Trigger ------------------------------------------------------
-trigger.source = ps.TriggerSource.B
+trigger.source = ps.Trigger.Source.B
 # trigger.source = ps.TriggerSource.EXT
 # trigger.source = ps.TriggerSource.INTERNAL
 trigger.level = 0.5
-trigger.direction = ps.TriggerDirection.FALLING
+trigger.direction = ps.Trigger.Direction.FALLING
 trigger.delay = 0.0
 trigger.autodelay = 0.01
-trigger.adc_max = 1
 
 print('')
 print('Trigger')
@@ -89,7 +86,7 @@ print(f'enabled: {trigger.enabled}, ', end='')
 print(f'source channel no: {trigger.source.channel_no}, ', end='')
 print(f'Picoscope name: {trigger.source.picoscope_name}, ',  end='')
 print(f'Picoscope source: {trigger.source.picoscope_source}, ',  end='')
-print(f'Direction code: {trigger.direction.mode}')
+print(f'Direction code: {trigger.direction.code}')
 print('')
 
 
@@ -97,6 +94,14 @@ print('')
 dso = ps.Picoscope5000A()
 try:
     dso.open_adc()
+    timebase, sample_rate = dso.find_timebase(requested_sample_rate)
+    sampling.timebase = timebase
+    sampling.dt = 1/sample_rate
+    for channel in channels:
+        channel.adc_max = dso.adc_max.value
+
+        # print(channel.adc_max)
+
 except ps.PicoSDKCtypesError:
     print('Could not connect to oscilloscope')
 
@@ -104,15 +109,21 @@ print(f'Oscilloscope connected: {dso.connected}')
 
 # --- Communicate with instrument -----------------------------------
 if dso.connected:
-    for ch in channel:
-        dso.set_vertical(ch)
-        dso.set_bwl(ch)
+    try:
+        for channel in channels:
+            dso.set_vertical(channel)
+            dso.set_bwl(channel)
 
-    dso.set_trigger(trigger, dso.channel, dso.sampling)
-    dso.configure_acquisition(sampling)
+        dso.set_trigger(trigger, channels, sampling)
+        dso.configure_acquisition(sampling)
 
-    y = dso.acquire_trace(sampling, channel)
+        y = dso.acquire_trace(sampling, channels)
 
-    dso.close()
+        plt.plot(y)
+    except AttributeError as e:
+        print("Error communicating with oscilloscope. Closing")
+        print(f"{e}")
+    finally:
+        dso.close_adc()
 else:
     print('Oscilloscope not connected. Skips communication')

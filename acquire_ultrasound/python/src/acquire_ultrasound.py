@@ -883,16 +883,16 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
             self.pulseShapeComboBox.addItem(member.value.label, member)
 
         for member in us.FilterType:
-            self.filterComboBox.addItem(member.value, member.name)
+            self.filterComboBox.addItem(member.value, member)
 
-        for member in ps.Coupling:
+        for member in ps.Channel.Coupling:
             for combobox in [self.couplingAComboBox, self.couplingBComboBox]:
-                combobox.addItem(member.value, member.name)
+                combobox.addItem(member.value, member)
 
-        for member in ps.TriggerDirection:
+        for member in ps.Trigger.Direction:
             self.triggerModeComboBox.addItem(member.value, member)
 
-        for member in ps.TriggerSource:
+        for member in ps.Trigger.Source:
             self.triggerSourceComboBox.addItem(member.value, member)
 
         for combobox in [self.bwlAComboBox, self.bwlBComboBox]:
