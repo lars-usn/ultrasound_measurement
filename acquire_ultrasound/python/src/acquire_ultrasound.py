@@ -67,7 +67,7 @@ class Display:
     """Settings for display on screen during runtime."""
     t_min: float = 0.0      # Start time of part of trace to be analysed.
     t_max: float = 10.0     # End time of part of trace to be analysed.
-    channel = [True, True]  # Channels to display on screen.
+    channels = [True, True]  # Channels to display on screen.
 
 
 @dataclass
@@ -105,7 +105,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         self.dso = ps.Picoscope5000A()
         self.display = Display()
         self.sampling = ps.Horizontal()
-        self.channel = [ps.Channel(k) for k in range(N_CHANNELS)]
+        self.channels = [ps.Channel(k) for k in range(N_CHANNELS)]
         self.trigger = ps.Trigger()
 
         # Waveform processing
@@ -174,6 +174,10 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         # Connect and initialise instrument
         self.dso.open_adc()
         if self.dso.connected:
+            # Update ADC settings to actual values
+            for channel in self.channels:
+                channel.adc_max = self.dso.adc_max.value
+
             # Check for signal generator, remove graphs if not present
             self.dso.check_awg()
             if not self.dso.signal_generator:
@@ -181,9 +185,9 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
                 self.axis['awgspec'].remove()
 
             # Send initial configuration to oscilloscope
+            self.update_sampling()
             self.update_vertical()
             self.update_trigger()
-            self.update_sampling()
             self.update_pulser()
             self.update_rf_filter()
             self.update_display()
@@ -252,34 +256,24 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         all available channels. Transmits settings to the oscilloscope if it
         is connected.
 
-        Side Effects
-        ------------
-        - Enables both `self.channel[0]` and `self.channel[1]` unconditionally.
-        - Modifies properties (`v_range`, `coupling`, `offset`, `bwl`) on all
-          channel objects within `self.channel`.
-        - Transmits configurations to `self.dso` if a hardware connection is
-          active.
-
         Notes
         -----
         Both input traces are hardcoded to always be acquired, regardless of
         individual GUI enable/disable states, they are only for display.
         """
-        for channel_no, channel in enumerate(self.channel):
+        for channel_no, channel in enumerate(self.channels):
             channel.enabled = True  # All traces are always aquired
 
             channel.v_range = us.read_scaled_value(
                 self.rangeComboBox[channel_no].currentText())
 
             channel.v_range = channel.v_max
-            channel.coupling = self.couplingComboBox[channel_no].currentText()
+            channel.coupling = self.couplingComboBox[channel_no].currentData()
             channel.offset = self.offsetSpinBox[channel_no].value()
-
-            bwl = self.bwlComboBox[channel_no].currentText()
-            channel.bwl = not bwl.casefold().startswith('none')
+            channel.bwl = self.bwlComboBox[channel_no].currentData()
 
         if self.dso.connected:
-            for channel in self.channel:
+            for channel in self.channels:
                 self.dso.set_vertical(channel)
                 self.dso.set_bwl(channel)
 
@@ -298,9 +292,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         """
         # Read settings from GUI
         self.trigger.direction = self.triggerModeComboBox.currentData()
-        print(repr(self.trigger.direction))
         self.trigger.source = self.triggerSourceComboBox.currentData()
-        print(repr(self.trigger.source))
         self.trigger.level = self.triggerLevelSpinBox.value()
         self.trigger.delay = self.triggerDelaySpinBox.value()*TIMESCALE
         self.trigger.autodelay = self.triggerAutoDelaySpinBox.value()*1e-3
@@ -308,7 +300,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
         # Transmit configuration to oscilloscope
         if self.dso.connected:
-            self.dso.set_trigger(self.trigger, self.channel, self.sampling)
+            self.dso.set_trigger(self.trigger, self.channels, self.sampling)
 
         self.runstate.sampling_changed = True
         return
@@ -384,8 +376,8 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         else:
             # Read GUI
             self.pulse.on = self.transmitButton.isChecked()
-            self.pulse.envelope = self.pulseEnvelopeComboBox.currentText()
-            self.pulse.shape = self.pulseShapeComboBox.currentText()
+            self.pulse.envelope = self.pulseEnvelopeComboBox.currentData()
+            self.pulse.shape = self.pulseShapeComboBox.currentData()
             self.pulse.f0 = self.pulseFrequencySpinBox.value()*FREQUENCYSCALE
             self.pulse.n_cycles = self.pulseDurationSpinBox.value()
             self.pulse.phase = self.pulsePhaseSpinBox.value()
@@ -494,7 +486,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
                 # Read and interpret result from osciloscope
                 self.wfm.y = self.dso.acquire_trace(self.sampling,
-                                                    self.channel)
+                                                    self.channels)
 
                 self.plot_result()
 
@@ -545,7 +537,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
           `self.graph`
           by calling `set_data()`.
         - Empties lines for channels that are disabled in
-          `self.display.channel`.
+          `self.display.channels`.
         - Forces Matplotlib to process pending events via
           `self.fig.canvas.flush_events()`.
         - Triggers an interface redraw by invoking `self.update_display()`.
@@ -581,7 +573,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
             lines = [self.graph[key][ch_no]
                      for key in ['trace', 'zoom', 'spectrum']]
 
-            if self.display.channel[ch_no]:
+            if self.display.channels[ch_no]:
                 y_data = [y_full[:, ch_no],
                           y_zoomed[:, ch_no],
                           psd[:, ch_no]]
@@ -824,15 +816,15 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         db_lim = us.find_limits([self.dbMinSpinBox.value(),
                                  self.dbMaxSpinBox.value()])
 
-        self.display.channel = [btn.isChecked() for btn in self.chButton]
-        channel_data = zip(self.display.channel,
+        self.display.channels = [btn.isChecked() for btn in self.chButton]
+        channel_data = zip(self.display.channels,
                            self.chButton,
                            self.chLabel,
                            self.displayrangeComboBox,
                            self.axis['zoom'],
                            self.axis['trace'],
                            self.axis['spectrum'],
-                           self.channel)
+                           self.channels)
 
         for k, data in enumerate(channel_data):
             (is_on, btn, label, vrange,
@@ -876,28 +868,28 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         """
 
         # Configure Comboboxes
-        for member in us.Window:
-            self.pulseEnvelopeComboBox.addItem(member.value.label, member)
-
-        for member in us.Carrier:
-            self.pulseShapeComboBox.addItem(member.value.label, member)
-
-        for member in us.FilterType:
-            self.filterComboBox.addItem(member.value, member)
-
         for member in ps.Channel.Coupling:
             for combobox in [self.couplingAComboBox, self.couplingBComboBox]:
                 combobox.addItem(member.value, member)
 
-        for member in ps.Trigger.Direction:
-            self.triggerModeComboBox.addItem(member.value, member)
+        for combobox in [self.bwlAComboBox, self.bwlBComboBox]:
+            combobox.addItem("None", False)
+            combobox.addItem("20 MHz", True)
 
         for member in ps.Trigger.Source:
             self.triggerSourceComboBox.addItem(member.value, member)
 
-        for combobox in [self.bwlAComboBox, self.bwlBComboBox]:
-            combobox.addItem("None", False)
-            combobox.addItem("20 MHz", True)
+        for member in ps.Trigger.Direction:
+            self.triggerModeComboBox.addItem(member.value, member)
+
+        for member in us.Window:
+            self.pulseEnvelopeComboBox.addItem(member.value, member)
+
+        for member in us.Carrier:
+            self.pulseShapeComboBox.addItem(member.value, member)
+
+        for member in us.FilterType:
+            self.filterComboBox.addItem(member.value, member)
 
         # Display scales
         for spin_box in (self.zoomStartSpinBox, self.zoomEndSpinBox,

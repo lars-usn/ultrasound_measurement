@@ -14,20 +14,18 @@ from enum import Enum
 from math import pi, radians, log10, floor, frexp, isclose
 import numpy as np
 from scipy import signal
+from scipy.signal import windows
 import matplotlib.pyplot as plt
 
 from datetime import date
 from pathlib import Path
-from enum import StrEnum
 
 
 @dataclass
 class Waveform:
     """Measurement results as 1D time traces."""
 
-    y: np.ndarray = field(
-        default_factory=lambda: np.zeros((100, 1))
-    )
+    y: np.ndarray = field(default_factory=lambda: np.zeros((100, 1)))
 
     dt: float = 1.0
     t0: float = 0.0
@@ -74,7 +72,6 @@ class Waveform:
 
         m, e = frexp(self.n_samples)
         n = 2 ** (e + upsample)
-
         return max(n, 1024)
 
     @property
@@ -91,22 +88,20 @@ class Waveform:
 
     def filtered(self, wave_filter):
         """Return filtered copy of waveform."""
-        filter_type = (str(wave_filter.filter_type).strip().lower())
+        print(wave_filter == FilterType.BYPASS)
+        match wave_filter:
+            case FilterType.BYPASS:
+                y_filtered = self.y.copy()
 
-        print('')
-        print('filtered method')
-        print(wave_filter)
-        print('')
+            case FilterType.AC:
+                y_filtered = self.y - self.y.mean(axis=0)
 
-        if filter_type.startswith("no"):
-            y_filtered = self.y.copy()
+            case FilterType.RF:
+                b, a = wave_filter.coefficients()
+                y_filtered = signal.filtfilt(b, a, self.y, axis=0)
 
-        elif filter_type.startswith("ac"):
-            y_filtered = self.y - self.y.mean(axis=0)
-
-        else:
-            b, a = wave_filter.coefficients()
-            y_filtered = signal.filtfilt(b, a, self.y, axis=0)
+            case _:
+                raise ValueError("Filter not recognised", wave_filter)
 
         return Waveform(y=y_filtered, dt=self.dt, t0=self.t0, dtr=self.dtr)
 
@@ -267,25 +262,29 @@ class Waveform:
         return wfm
 
 
-@dataclass(frozen=True, slots=True)
-class ActionItem:
-    label: str
-    func_name: str
-    par: float | None = None
-
-
 class Window(Enum):
-    RECT = ActionItem("Rectangular", "rectangular")
-    HANN = ActionItem("Hann", "hann")
-    HAMMING = ActionItem("Hamming", "hamming")
-    TUKEY = ActionItem("Tukey", "tukey", 0.25)
+    RECT = "Rectangular"
+    HANN = "Hann"
+    HAMMING = "Hamming"
+    TUKEY = "Tukey"
+
+    def evaluate(self, n_samples: int) -> np.ndarray:
+        match self:
+            case Window.RECT:
+                return np.ones(n_samples)
+            case Window.HANN:
+                return windows.hann(n_samples)
+            case Window.HAMMING:
+                return windows.hamming(n_samples)
+            case Window.TUKEY:
+                return windows.tukey(n_samples, alpha=0.25)
 
 
 class Carrier(Enum):
-    COS = ActionItem("Cosine", "cos")
-    SQUARE = ActionItem("Square", "square", 0.5)
-    TRIANGLE = ActionItem("Triangular", "sawtooth", 0.5)
-    SAWTOOTH = ActionItem("Sawtooth", "sawtooth", 1.0)
+    COS = "Cosine"
+    SQUARE = "Square"
+    TRIANGLE = "Triangular"
+    SAWTOOTH = "Sawtooth"
 
     def evaluate(self, phase: np.ndarray) -> np.ndarray:
         match self:
@@ -293,10 +292,13 @@ class Carrier(Enum):
                 return np.cos(phase)
 
             case Carrier.SQUARE:
-                return 0.5 * signal.square(phase, duty=self.value.par)
+                return signal.square(phase, duty=0.5)
 
-            case Carrier.TRIANGLE | Carrier.SAWTOOTH:
-                return 0.5 * signal.sawtooth(phase, width=self.value.par)
+            case Carrier.TRIANGLE:
+                return signal.sawtooth(phase, width=0.5)
+
+            case Carrier.SAWTOOTH:
+                return signal.sawtooth(phase, width=1.0)
 
         raise ValueError(f"Unsupported carrier: {self}")
 
@@ -312,7 +314,7 @@ class Pulse:
     ----------
     shape : Carriers
         Carrier wave shape: "cosine", "square", "triangle", "sawtooth".
-    envelope : Windows
+    envelope : Window
         Pulse envelope, Rectangular, Hann, Tukey, ...
     n_cycles : float
         Pulse length as number of cycles.
@@ -383,14 +385,7 @@ class Pulse:
         """
         phase_arg = (2 * pi * self.f0 * self.t + radians(self.phase))
 
-        func = self.envelope.value.func_name
-        par = self.envelope.value.par
-        if par is None:
-            window_spec = func
-        else:
-            window_spec = (func, par)
-        win = signal.get_window(window_spec, self.n_samples)
-
+        win = self.envelope.evaluate(self.n_samples)
         y_signal = self.a * win * self.shape.evaluate(phase_arg)
 
         if y_signal.size:
@@ -491,7 +486,7 @@ class Pulse:
         return 0
 
 
-class FilterType(StrEnum):
+class FilterType(Enum):
     """Supported waveform filter types."""
     BYPASS = "No"
     AC = "AC"

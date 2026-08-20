@@ -23,8 +23,7 @@ import numpy as np
 from bisect import bisect_left
 from typing import ClassVar
 from dataclasses import dataclass
-from enum import StrEnum
-
+from enum import Enum
 
 from picosdk.ps5000a import ps5000a as picoscope
 from picosdk.functions import adc2mV, assert_pico_ok
@@ -58,13 +57,14 @@ class Channel:
         Bandwidth limiter activated
     """
 
-    class Coupling(StrEnum):
+    class Coupling(Enum):
         DC = "DC"
         AC = "AC"
 
         @property
         def code(self) -> int:
-            return int(picoscope.PS5000A_COUPLING[f"PS5000A_{self.upper()}"])
+            return int(picoscope.PS5000A_COUPLING[
+                f"PS5000A_{self.value.upper()}"])
 
     VALID_RANGES: ClassVar[tuple[float, ...]] = (
         0.01, 0.02, 0.05,
@@ -170,7 +170,7 @@ class Trigger:
         Auto-trigger timeout in seconds.
     """
 
-    class Direction(StrEnum):
+    class Direction(Enum):
         RISING = "Rising"
         FALLING = "Falling"
 
@@ -179,7 +179,7 @@ class Trigger:
             return {self.RISING: 2,
                     self.FALLING: 3}[self]
 
-    class Source(StrEnum):
+    class Source(Enum):
         """Supported trigger sources."""
         A = "Ch A"
         B = "Ch B"
