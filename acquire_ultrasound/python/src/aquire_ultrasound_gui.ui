@@ -96,7 +96,7 @@
      <string notr="true"/>
     </property>
     <property name="currentIndex">
-     <number>0</number>
+     <number>2</number>
     </property>
     <widget class="QWidget" name="acquisitionTab">
      <property name="enabled">
@@ -897,31 +897,11 @@
        <item row="2" column="1">
         <widget class="QComboBox" name="pulseShapeComboBox">
          <property name="currentText">
-          <string>Sine</string>
+          <string/>
          </property>
          <property name="currentIndex">
-          <number>0</number>
+          <number>-1</number>
          </property>
-         <item>
-          <property name="text">
-           <string>Sine</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>Square</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>Triangular</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>Sawtooth</string>
-          </property>
-         </item>
         </widget>
        </item>
        <item row="5" column="1">
