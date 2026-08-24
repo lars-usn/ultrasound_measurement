@@ -265,7 +265,7 @@ class Window(Enum):
     RECT = "Rectangular"
     HANN = "Hann"
     HAMMING = "Hamming"
-    TUKEY = "Tukey"
+    TUKEY = "Tukey"   # Fixed to tapering width alpha=0.25
 
     def evaluate(self, n_samples: int) -> np.ndarray:
         match self:
@@ -325,8 +325,6 @@ class Pulse:
         Phase of carrier wave in degrees, referenced to a cosine.
     dt : float
         Sample interval in seconds.
-    alpha : float
-        Tukey window cosine-fraction, alpha = 0.0 to 1.0.
     trigger_source : int
         Trigger source identifier (not fully implemented yet).
     available : bool
@@ -342,24 +340,17 @@ class Pulse:
     a: float = 1.0
     phase: float = 0.0
     dt: float = 8e-9
-    alpha: float = 0.5
     trigger_source: int = 1
     available: bool = False
     on: bool = False
 
     def __post_init__(self) -> None:
-
         if self.f0 <= 0:
             raise ValueError("f0 must be positive.")
-
         if self.dt <= 0:
             raise ValueError("dt must be positive.")
-
         if self.n_cycles <= 0:
             raise ValueError("n_cycles must be positive.")
-
-        if not 0.0 <= self.alpha <= 1.0:
-            raise ValueError("alpha must be between 0 and 1.")
 
     @property
     def t(self) -> np.ndarray:
