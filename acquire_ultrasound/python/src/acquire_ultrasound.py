@@ -25,9 +25,7 @@ Remaining
       consumes almost all time, and is a bit slow. Try to solve with blit.
     - Averaging: Seems easy, as the acqusition is fast, approx. 1/100 s for
       20 000 points in 2 channnels.
-    - Trigger: Being changed to more structured setup, not ready yet
-    - Combo boxes: Items addded programmatically to use StrEnums defined in
-      code. Must be corrected in Qt Designer ver. 6
+    - Trigger: External trigger functions must be checked.
 """
 from PySide6 import QtWidgets
 from PySide6.QtWidgets import QApplication
@@ -48,7 +46,6 @@ COLOR = {'warning': ('#78281F', '#FADBD8'),
          'neutral': ('#000000', '#FFFFFF'),
          'off': '#708090',
          'channel': ('#004B93', '#D32F2F', '#388E3C', '#FBC02D'),
-         #         'awg': ('#388E3C', '#F5FFFA'),
          'awg': ('#20B2AA', '#F5FFFA'),
          'zoom': ('#B0E0E6', '#E0FFFF'),
          }
@@ -416,7 +413,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         rf_filter = self.rf_filter
 
         rf_filter.sample_rate = self.sampling.sample_rate
-        rf_filter.filter_type = self.filterComboBox.currentData()
+        rf_filter.mode = self.filterComboBox.currentData()
         rf_filter.f_min = self.fminSpinBox.value() * FREQUENCYSCALE
         rf_filter.f_max = self.fmaxSpinBox.value() * FREQUENCYSCALE
         rf_filter.order = self.filterOrderSpinBox.value()
@@ -888,7 +885,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         for member in us.Carrier:
             self.pulseShapeComboBox.addItem(member.value, member)
 
-        for member in us.FilterType:
+        for member in us.WaveformFilter.Mode:
             self.filterComboBox.addItem(member.value, member)
 
         # Display scales

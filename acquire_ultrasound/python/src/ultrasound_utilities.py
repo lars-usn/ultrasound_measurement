@@ -6,7 +6,7 @@ Lars Hoff, USN, Sep 2022
 Modified July 2026
     - Follow PEP-8 and numpy docstring style guides.
     - Tested on Ubuntu
-    - General code cleanup with help from Gemini
+    - General code cleanup with help from Gemini and CoPilot
 """
 
 from dataclasses import dataclass, field
@@ -289,13 +289,10 @@ class Carrier(Enum):
         match self:
             case Carrier.COS:
                 return np.cos(phase)
-
             case Carrier.SQUARE:
                 return signal.square(phase, duty=0.5)
-
             case Carrier.TRIANGLE:
                 return signal.sawtooth(phase, width=0.5)
-
             case Carrier.SAWTOOTH:
                 return signal.sawtooth(phase, width=1.0)
 
@@ -476,17 +473,18 @@ class Pulse:
         return 0
 
 
+class FilterMode(Enum):
+    """Supported waveform filter types."""
+    NONE = "No"
+    AC = "AC"
+    BANDPASS = "Bandpass filter"
+
+
 @dataclass(slots=True)
 class WaveformFilter:
     """Digital filter definition for waveform processing."""
 
-    class Mode(Enum):
-        """Supported waveform filter types."""
-        NONE = "No"
-        AC = "AC"
-        BANDPASS = "Bandpass filter"
-
-    mode: Mode = Mode.NONE
+    mode: FilterMode = FilterMode.NONE
     f_min: float = 100e3
     f_max: float = 10e6
     order: int = 2
@@ -503,11 +501,13 @@ class WaveformFilter:
         if self.sample_rate <= 0:
             raise ValueError("sample_rate must be positive")
 
+        # Correct to allowed values instead of giving error, allows incorrect
+        # entries during runtime
         if self.order < 1:
-            raise ValueError("order must be >= 1")
+            self.order = 1
 
         if self.f_max <= self.f_min:
-            raise ValueError("f_max must be greater than f_min")
+            self.f_max = self.f_min + 0.1  # Emergency solution, avoid crash
 
     @property
     def normalized_cutoffs(self) -> np.ndarray:
