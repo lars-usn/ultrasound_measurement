@@ -641,18 +641,11 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         color : tuple of str
             A tuple or list containing exactly two color strings, one for
             text and one for background.
-
-        Returns
-        -------
-        str
-            The message string that was applied to the UI element.
-
         """
         text_color, bg_color = color
         element.setText(message)
         element.setStyleSheet(
             f'color: {text_color}; background-color: {bg_color}')
-        return message
 
     def update_status_box(self, acquiring: bool = False) -> str:
         """Write the system acquisition state to the status box.
@@ -672,7 +665,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         else:
             message, color = 'Acquiring', COLOR['ok']
 
-        return self._update_ui_element(self.statusEdit, message, color)
+        self._update_ui_element(self.statusEdit, message, color)
 
     def update_connected_box(self, connected: bool = False) -> str:
         """Write the connection state of the hardware instrument to the GUI.
@@ -692,7 +685,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         else:
             message, color = 'Connected', COLOR['ok']
 
-        return self._update_ui_element(self.connectedEdit, message, color)
+        self._update_ui_element(self.connectedEdit, message, color)
 
     def update_transmit_box(self,
                             available: bool = False,
@@ -719,7 +712,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         else:
             message, color = 'Off', COLOR['warning']
 
-        return self._update_ui_element(self.transmitStatusEdit, message, color)
+        self._update_ui_element(self.transmitStatusEdit, message, color)
 
     def update_status(self, message: str, append: bool = False) -> str:
         """Update the status log field at the bottom of the window.

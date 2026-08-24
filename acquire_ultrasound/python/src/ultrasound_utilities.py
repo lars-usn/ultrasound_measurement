@@ -16,17 +16,18 @@ import numpy as np
 from scipy import signal
 from scipy.signal import windows
 import matplotlib.pyplot as plt
-
 from datetime import date
 from pathlib import Path
 
 
+def default_2d_trace() -> np.ndarray:
+    return np.zeros((4, 2))    # General empty 2D array
+
+
 @dataclass
 class Waveform:
-    """Measurement results as 1D time traces."""
-
-    y: np.ndarray = field(default_factory=lambda: np.zeros((100, 1)))
-
+    """Measurement results as 2D time traces."""
+    y: np.ndarray = field(default_factory=default_2d_trace)
     dt: float = 1.0
     t0: float = 0.0
     dtr: float = 0.0
@@ -36,7 +37,7 @@ class Waveform:
 
         self.y = np.asarray(self.y)
 
-        if self.y.ndim == 1:
+        if self.y.ndim == 1:   # Ensure 2D array also if one column
             self.y = self.y.reshape((-1, 1))
 
         self.dt = float(self.dt)
@@ -74,17 +75,13 @@ class Waveform:
         n = 2 ** (e + upsample)
         return max(n, 1024)
 
-    @property
-    def f(self) -> np.ndarray:
-        """Frequency vector."""
-        return (np.arange(0, self.n_fft() // 2) / self.n_fft() * self.fs)
-
     def powerspectrum(self, normalise=False, scale="linear", upsample=2):
         """Calculate power spectrum."""
-        return powerspectrum(self.y, self.dt,
-                             n_fft=self.n_fft(upsample=upsample),
-                             scale=scale,
-                             normalise=normalise)
+        f, psd = powerspectrum(self.y, self.dt,
+                               n_fft=self.n_fft(upsample=upsample),
+                               scale=scale,
+                               normalise=normalise)
+        return f, psd
 
     def filtered(self, wave_filter):
         """Return filtered copy of waveform."""
@@ -797,11 +794,11 @@ def powerspectrum(y: np.ndarray, dt: float,
 
     if normalise:
         max_vals = np.max(psd, axis=0, keepdims=True)
-        max_vals[max_vals == 0] = 1.0
-        psd = psd / max_vals
+        psd = np.divide(psd, max_vals, out=psd, where=max_vals != 0)
 
     if scale.lower() == "db":
-        psd = 10.0 * np.log10(np.maximum(psd, 1e-20))
+        out_db = np.full_like(psd, -200.0)
+        psd = 10.0 * np.log10(psd, out=out_db, where=psd > 0)
 
     return f, psd
 
