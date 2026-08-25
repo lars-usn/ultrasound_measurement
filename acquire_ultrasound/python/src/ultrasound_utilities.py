@@ -75,24 +75,24 @@ class Waveform:
         n = 2 ** (e + upsample)
         return max(n, 1024)
 
-    def powerspectrum(self, normalise=False, scale="linear", upsample=2):
+    def powerspectrum(self, normalise=False, dbscale=False, upsample=2):
         """Calculate power spectrum."""
         f, psd = powerspectrum(self.y, self.dt,
                                n_fft=self.n_fft(upsample=upsample),
-                               scale=scale,
+                               dbscale=dbscale,
                                normalise=normalise)
         return f, psd
 
     def filtered(self, wave_filter):
         """Return filtered copy of waveform."""
         match wave_filter.mode:
-            case WaveformFilter.Mode.NONE:
+            case FilterMode.NONE:
                 y_filtered = self.y.copy()
 
-            case WaveformFilter.Mode.AC:
+            case FilterMode.AC:
                 y_filtered = self.y - self.y.mean(axis=0)
 
-            case WaveformFilter.Mode.BANDPASS:
+            case FilterMode.BANDPASS:
                 b, a = wave_filter.coefficients
                 y_filtered = signal.filtfilt(b, a, self.y, axis=0)
 
@@ -119,12 +119,12 @@ class Waveform:
 
         Parameters
         ----------
-        time_unit : str, optional
-            Unit to plot time in ('s', 'ms', 'us'). Defaults to "us".
-        ch : array_like, optional
-            Channels to plot. Defaults to (0, 1) if not specified.
-        y_max : float, optional
-            Maximum scale on the amplitude axis. Defaults to None.
+        time_unit : str, optional, default "us".
+            Unit to plot time in ('s', 'ms', 'us').
+        ch : array_like, default (0, 1)
+            Channels to plot. .
+        y_max : float, default None.
+            Maximum scale on the amplitude axis.
 
         """
         ch = np.array(ch)
@@ -133,29 +133,27 @@ class Waveform:
         return
 
     def plot_spectrum(self, time_unit="s", ch=(0, 1), y_max=None, f_max=None,
-                      normalise=True, scale="dB", db_min=-40, ax=None):
+                      normalise=True, dbscale=True, db_min=-40, ax=None):
         """Plot trace and power spectrum in one graph.
 
         Parameters
         ----------
-        time_unit : str, optional
-            Unit to plot time in ('s', 'ms', 'us'). Defaults to "s".
-        ch : array_like, optional
-            Channels to plot. Defaults to [0, 1] if not specified.
-        y_max : float, optional
-            Maximum scale on the amplitude axis. Defaults to None.
-        f_max : float, optional
-            Maximum scale on the frequency axis. Defaults to None.
-        normalise : bool, optional
-            Normalise power spectrum plot to 1 (0 dB). Defaults to True.
-        scale : str, optional
-            Scaling option, either "linear" or "dB". Defaults to "dB".
-        db_min : float, optional
-            Dynamic range on dB-plot. Defaults to -40.
-        ax : array_like, optional
+        time_unit : str, default 's'.
+            Unit to plot time in ('s', 'ms', 'us').
+        ch : array_like, default [0, 1]
+            Channels to plot.
+        y_max : float, default None.
+            Maximum scale on the amplitude axis.
+        f_max : float, default None.
+            Maximum scale on the frequency axis.
+        normalise : bool, default True.
+            Normalise power spectrum plot to 1 (0 dB).
+        dbscale : bool, default True
+            Scaling of output, power or dB.
+        db_min : float, default -40.
+            Dynamic range on dB-plot.
+        ax : array_like, default None
             List of axes objects to plot time trace and spectrum.
-            Defaults to None.
-
         """
         plot_spectrum(self.t(), self.y[:, ch],
                       time_unit=time_unit,
@@ -163,7 +161,7 @@ class Waveform:
                       f_max=f_max,
                       n_fft=self.n_fft(),
                       normalise=normalise,
-                      scale=scale,
+                      dbscale=dbscale,
                       db_min=db_min,
                       ax=ax)
         return
@@ -179,9 +177,9 @@ class Waveform:
         ----------
         filename : str
             Full path of the file to save data in.
-        overwrite : bool, optional
+        overwrite : bool, default True
             If True, overwrites the file if it exists. If False, raises a
-            FileExistsError. Defaults to True.
+            FileExistsError.
 
         Returns
         -------
@@ -438,7 +436,7 @@ class Pulse:
         f, psd = powerspectrum(y=self.y,
                                dt=self.dt,
                                n_fft=self.n_fft,
-                               scale="dB",
+                               dbscale=True,
                                normalise=True)
         return f, psd
 
@@ -465,7 +463,7 @@ class Pulse:
                       time_unit=self.time_unit,
                       f_max=scale_125(3*self.f0),
                       n_fft=self.n_fft,
-                      scale="db",
+                      dbscale=True,
                       normalise=True)
         return 0
 
@@ -757,7 +755,7 @@ def plot_pulse(ax: plt.Axes | None = None,
 
 def powerspectrum(y: np.ndarray, dt: float,
                   n_fft: int | None = None,
-                  scale: str = "linear",
+                  dbscale: bool = False,
                   normalise: bool = False) -> tuple[np.ndarray, np.ndarray]:
     """Calculate the power spectrum of a pulse waveform.
 
@@ -774,8 +772,8 @@ def powerspectrum(y: np.ndarray, dt: float,
         Sample interval in seconds.
     n_fft : int, optional
         Number of points to use in the FFT. If None, the signal length is used.
-    scale : str, default "linear"
-        Scaling format for the spectrum: "linear" (power) or "dB".
+    dbscale : bool, default False
+        Scale output as power (V^2) or in dB
     normalise : bool, default False
         If True, normalises the spectrum of each channel to its maximum value.
 
@@ -796,7 +794,7 @@ def powerspectrum(y: np.ndarray, dt: float,
         max_vals = np.max(psd, axis=0, keepdims=True)
         psd = np.divide(psd, max_vals, out=psd, where=max_vals != 0)
 
-    if scale.lower() == "db":
+    if dbscale:
         out_db = np.full_like(psd, -200.0)
         psd = 10.0 * np.log10(psd, out=out_db, where=psd > 0)
 
@@ -809,7 +807,7 @@ def plot_spectrum(t: np.ndarray, y: np.ndarray,
                   y_max: float | None = None,
                   f_max: float | None = None,
                   db_min: float = -40.0,
-                  scale: str = "dB",
+                  dbscale: bool = True,
                   normalise: bool = True,
                   ax: list[plt.Axes] | None = None):
     """Plot time trace and power spectrum in a standardised format.
@@ -830,8 +828,8 @@ def plot_spectrum(t: np.ndarray, y: np.ndarray,
         Maximum frequency to plot in Hz
     n_fft : int, optional
         Number of points in FFT.
-    scale : str, default "dB"
-        Scaling format for the spectrum: "linear" (Power) or "dB".
+    dbscale : bool, default True
+        Scaling format for the spectrum, power or dB.
     normalise : bool, default True
         If True, normalises the spectrum to 1.0 (or 0 dB)
     db_min : float, default -40.0
@@ -862,14 +860,16 @@ def plot_spectrum(t: np.ndarray, y: np.ndarray,
 
     # Calculate power spectrum (assumes even sampling)
     dt = float(t[1] - t[0])
-    f, psd = powerspectrum(y, dt, n_fft=n_fft,
-                           scale=scale, normalise=normalise)
+    f, psd = powerspectrum(y, dt,
+                           n_fft=n_fft,
+                           dbscale=dbscale,
+                           normalise=normalise)
 
     # Get scaling parameters for frequency axis
     multiplier, freq_unit = find_timescale(time_unit)
     f_limit = float(f.max()) if f_max is None else f_max
 
-    if scale.lower() == "db":
+    if dbscale:
         db_lim = np.array([db_min, 0.0])
         if not np.any(np.isnan(psd)):
             db_lim = float(psd.max()) + db_lim

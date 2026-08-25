@@ -17,7 +17,7 @@ Modified July 2026
     - Follow PEP-8 and numpy docstring style guides.
     - Tested on Ubuntu
     - GUI updated to QT6
-    - Massive cleanup in code with help from Gemini
+    - Massive cleanup in code with help from Gemini and Copilot
 
 Remaining
     - Hardware-control of pulser, pad with zeros for correct rep. rate
@@ -25,7 +25,6 @@ Remaining
       consumes almost all time, and is a bit slow. Try to solve with blit.
     - Averaging: Seems easy, as the acqusition is fast, approx. 1/100 s for
       20 000 points in 2 channnels.
-    - Trigger: External trigger functions must be checked.
 """
 from PySide6 import QtWidgets
 from PySide6.QtWidgets import QApplication
@@ -56,7 +55,7 @@ FREQUENCYSCALE = 1E6
 V_MAX = 20           # Absolute maximum voltage scale
 
 matplotlib.use('QtAgg')
-oscilloscope_main_window, QtBaseClass = loadUiType('aquire_ultrasound_gui.ui')
+oscilloscope_main_window, QtBaseClass = loadUiType('acquire_ultrasound_gui.ui')
 
 
 @dataclass
@@ -134,11 +133,11 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     def connect_dso(self) -> int:
         """Connect, configure, and start the digital storage oscilloscope.
 
-        First, attempts to clean up any existing active connections.
-        Then, opens a new session with the instrumen, and applies the initial
+        Attempts to clean up any existing active connections.
+        Opens a new session with the instrument and applies the initial
         configuration (vertical settings, trigger, sampling, pulser,
         RF filter, and display).
-        Also updates GUI buttons and status messages bars based on the
+        Updates GUI buttons and status messages bars based on the
         connection result.
 
         Returns
@@ -214,7 +213,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     def close_connection(self) -> tuple[str, int]:
         """Close instrument connection without stopping the program.
 
-        Attempts to close the connection to the oscilloscope.
+        Attempts to close connection to the oscilloscope.
         If the instrument is not connected or fails to respond, the function
         catches the error to prevent the user interface from crashing.
 
@@ -248,10 +247,9 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     def update_vertical(self):
         """Read vertical settings from GUI and apply them to oscilloscope.
 
-        Synchronizes the software channel configurations with current states
-        of the GUI widgets (range, coupling, offset, bandwidth limits) for
-        all available channels. Transmits settings to the oscilloscope if it
-        is connected.
+        Synchronizes the software channel configurations with the GUI widgets
+        (range, coupling, offset, bandwidth limits).
+        Transmits settings to the oscilloscope if connected.
 
         Notes
         -----
@@ -259,7 +257,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         individual GUI enable/disable states, they are only for display.
         """
         for channel_no, channel in enumerate(self.channels):
-            channel.enabled = True  # All traces are always aquired
+            channel.enabled = True  # All traces are always acquired
 
             channel.v_range = us.read_scaled_value(
                 self.rangeComboBox[channel_no].currentText())
@@ -280,8 +278,8 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     def update_trigger(self):
         """Read trigger settings from the GUI and send them to the instrument.
 
-        Reads user inputs from the trigger-related GUI controls, scales values,
-        updates internal trigger , and transfers configuration to the
+        Reads user inputs from trigger-related GUI controls, scales values,
+        updates internal trigger, and transfers configuration to the
         oscilloscope.
         Updates the 'sampling_changed' flag to notify time scale may
         have changed.
@@ -347,9 +345,9 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
         Reads arbitrary waveform generator (AWG) parameters from
         the GUI (envelope, shape, frequency, duration, phase, and amplitude)
-        and transfers them to the AWG in the oscilloscope.
+        and transfers them to the AWG.
         Computes and updates time-domain pulse and power spectrum graphs.
-        Transfers the pulse data the oscilloscope If an AWG is supported.
+        Transfers the pulse data the oscilloscope if an AWG is supported.
         Aborts early if no AWG is present.
 
         Returns
@@ -406,7 +404,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     def update_rf_filter(self) -> None:
         """Update the waveform filter configuration from the GUI.
 
-        Reads RF filtere settings from GUI and uses the sample rate from
+        Reads RF filter settings from GUI and uses the sample rate from
         the system to scale the filter.
         """
 
@@ -441,7 +439,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         Locks the acquisition state and enters a polling loop that
         captures data traces from the hardware as long as the shutdown flag
         (`stop_acquisition`) is false. Forces the hardware to reconfigure if
-        sampling parameters were modified prior to or during the loop.
+        sampling parameters are modified during the loop.
 
 
         Side Effects
@@ -521,39 +519,30 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
 
         Applies the RF noise filter to the current waveform, crops the signal
         to the display time limits, and calculates its power spectrum
-        in decibels (dB). It then updates the data of existing
-        Matplotlib line objects for each active channel across three plots:
-        raw trace, zoomed trace, and spectrum. Inactive channels are cleared
-        from the display.
+        in decibels (dB).
+        Updates the data of existing Matplotlib line objects for each active
+        channel across three plots: raw trace, zoomed trace, and spectrum.
+        Inactive channels are cleared from the display.
 
         Side Effects
         ------------
         - Extracts and transforms data from `self.wfm` via filtering and
           zooming.
-        - Modifies the data arrays of Matplotlib line objects inside
-          `self.graph`
-          by calling `set_data()`.
-        - Empties lines for channels that are disabled in
-          `self.display.channels`.
-        - Forces Matplotlib to process pending events via
-          `self.fig.canvas.flush_events()`.
-        - Triggers an interface redraw by invoking `self.update_display()`.
 
         Notes
         -----
         - Updating plot data using `line.set_data()` is significantly faster
           than clearing and redrawing the entire axes. This is critical for
           rapid continuous acquisition.
-        - *Developer note:* If the plots fail to visually refresh on screen,
-          uncommenting `self.fig.canvas.draw()` right before `flush_events()`
-          is usually required in Matplotlib interactive modes.
+        - Updating is still slow, consuming most of the time per acqusition.
+          Check how this can be improved, e.g. blitting
         """
         # Filter, zoom, and find power spectrum
         wfm_filtered = self.wfm.filtered(self.rf_filter)
         wfm_zoomed = wfm_filtered.zoomed(self.display.t_lim)
-        f, psd = wfm_zoomed.powerspectrum(scale='dB',
-                                          normalise='True',
-                                          upsample=0)
+        f, psd = wfm_zoomed.powerspectrum(dbscale=True,
+                                          normalise=True,
+                                          upsample=2)
 
         # Decimate traces for fast rendering
         q = int(self.sampling.n_samples // 2000)
@@ -602,7 +591,6 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         Side Effects
         ------------
         - Creates a binary `.trc` file inside the 'results' directory.
-        - Updates the `self.statusBar` message with progress and results.
         - Synchronizes GUI elements: updates the File counter value,
           and writes the filename and full fill path on the GUI.
         """
@@ -769,11 +757,10 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
     def update_display(self, time_unit: str = 'us'):
         """Update values, graph limits, colors, and markers on the screen.
 
-        This method synchronizes the Matplotlib axes limits (time, voltage,
-        and frequency) with the current values in the GUI spinboxes. It also
-        updates the style and background colors of the channel toggle buttons
-        to visually reflect whether a channel is active, before forcing a
-        canvas redraw.
+        Synchronizes Matplotlib axes limits (time, voltage, and frequency)
+        with the values in the GUI spinboxes.
+        Updates the style and background colors of the channel toggle buttons
+        to indicate whether a channel is active.
 
         Parameters
         ----------
@@ -853,8 +840,6 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         Binds all interactive PyQt/PySide widgets (SpinBoxes, ComboBoxes,
         and Buttons) to the appropriate hardware control and display update
         functions.
-        Structures multi-channel elements into iterable formats and applies
-        the initial stylesheet coloring.
         """
 
         # Configure Comboboxes
@@ -878,7 +863,7 @@ class ReadUltrasound(QtBaseClass, oscilloscope_main_window):
         for member in us.Carrier:
             self.pulseShapeComboBox.addItem(member.value, member)
 
-        for member in us.WaveformFilter.Mode:
+        for member in us.FilterMode:
             self.filterComboBox.addItem(member.value, member)
 
         # Display scales
@@ -1077,8 +1062,6 @@ if __name__ == '__main__':
 
     Side Effects
     ------------
-    - Spawns a graphical user interface thread via `QtWidgets.QApplication`.
-    - Modifies the global application style theme to 'Fusion'.
     - Instantiates and displays the `ReadUltrasound` main window.
     """
     # Check for running Qt-applications
